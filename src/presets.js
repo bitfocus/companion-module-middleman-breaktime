@@ -101,12 +101,12 @@ module.exports = {
 		presets['Increase'] = {
 			type: 'button',
 			category: 'Duration Controls',
-			name: 'Increase Duration 1 Second',
+			name: 'Increase Duration 5 Seconds',
 			style: {
 				size: '18',
 				color: combineRgb(255, 255, 255),
 				bgcolor: combineRgb(0, 0, 0),
-				text: '+1s',
+				text: '+5s',
 			},
 			steps: [
 				{
@@ -114,7 +114,7 @@ module.exports = {
 						{
 							actionId: 'increaseDuration',
 							options: {
-								duration: 1,
+								duration: 5,
 							},
 						},
 					],
@@ -131,7 +131,9 @@ module.exports = {
 				},
 				{
 					feedbackId: 'temporaryWarning',
-					options: {},
+					options: {
+						warning: 'increaseDuration',
+					},
 					style: {
 						bgcolor: combineRgb(255, 0, 0),
 					},
@@ -142,12 +144,12 @@ module.exports = {
 		presets['Decrease'] = {
 			type: 'button',
 			category: 'Duration Controls',
-			name: 'Decrease Duration 1 Second',
+			name: 'Decrease Duration 5 Seconds',
 			style: {
 				size: '18',
 				color: combineRgb(255, 255, 255),
 				bgcolor: combineRgb(0, 0, 0),
-				text: '-1s',
+				text: '-5s',
 			},
 			steps: [
 				{
@@ -155,7 +157,7 @@ module.exports = {
 						{
 							actionId: 'decreaseDuration',
 							options: {
-								duration: 1,
+								duration: 5,
 							},
 						},
 					],
@@ -172,7 +174,9 @@ module.exports = {
 				},
 				{
 					feedbackId: 'temporaryWarning',
-					options: {},
+					options: {
+						warning: 'decreaseDuration',
+					},
 					style: {
 						bgcolor: combineRgb(255, 0, 0),
 					},
@@ -228,7 +232,7 @@ module.exports = {
 					},
 				},
 				{
-					feedbackId: 'selectedHasFinished',
+					feedbackId: 'selectedIsFinished',
 					options: {},
 					style: {
 						bgcolor: combineRgb(255, 0, 0),
@@ -245,7 +249,7 @@ module.exports = {
 				size: '14',
 				color: combineRgb(255, 255, 255),
 				bgcolor: combineRgb(0, 0, 0),
-				text: '$(breaktime:selected_duration)',
+				text: '$(breaktime:selected_duration_hhmmss)',
 			},
 			steps: [],
 			feedbacks: [],
@@ -259,7 +263,7 @@ module.exports = {
 				size: '14',
 				color: combineRgb(255, 255, 255),
 				bgcolor: combineRgb(0, 0, 0),
-				text: '$(breaktime:selected_time)',
+				text: '$(breaktime:selected_time_hhmmss)',
 			},
 			steps: [],
 			feedbacks: [],
@@ -309,7 +313,22 @@ module.exports = {
 				text: 'SCTE104: $(breaktime:scte104_injector_status_bool)',
 			},
 			steps: [],
-			feedbacks: [],
+			feedbacks: [
+				{
+					feedbackId: 'scte104Connected',
+					options: {},
+					style: {
+						bgcolor: combineRgb(0, 255, 0),
+					},
+				},
+				{
+					feedbackId: 'scte104Disconnected',
+					options: {},
+					style: {
+						bgcolor: combineRgb(255, 0, 0),
+					},
+				},
+			],
 		}
 
 		presets['Scte104InjectorStatus'] = {
@@ -323,7 +342,22 @@ module.exports = {
 				text: 'SCTE104: $(breaktime:scte104_injector_status)',
 			},
 			steps: [],
-			feedbacks: [],
+			feedbacks: [
+				{
+					feedbackId: 'scte104Connected',
+					options: {},
+					style: {
+						bgcolor: combineRgb(0, 255, 0),
+					},
+				},
+				{
+					feedbackId: 'scte104Disconnected',
+					options: {},
+					style: {
+						bgcolor: combineRgb(255, 0, 0),
+					},
+				},
+			],
 		}
 
 		presets['VmixStatusBool'] = {
@@ -337,7 +371,22 @@ module.exports = {
 				text: 'VMix: $(breaktime:vmix_status_bool)',
 			},
 			steps: [],
-			feedbacks: [],
+			feedbacks: [
+				{
+					feedbackId: 'vMixConnected',
+					options: {},
+					style: {
+						bgcolor: combineRgb(0, 255, 0),
+					},
+				},
+				{
+					feedbackId: 'vMixDisconnected',
+					options: {},
+					style: {
+						bgcolor: combineRgb(255, 0, 0),
+					},
+				},
+			],
 		}
 
 		presets['VmixStatus'] = {
@@ -351,7 +400,22 @@ module.exports = {
 				text: 'VMix: $(breaktime:vmix_status)',
 			},
 			steps: [],
-			feedbacks: [],
+			feedbacks: [
+				{
+					feedbackId: 'vMixConnected',
+					options: {},
+					style: {
+						bgcolor: combineRgb(0, 255, 0),
+					},
+				},
+				{
+					feedbackId: 'vMixDisconnected',
+					options: {},
+					style: {
+						bgcolor: combineRgb(255, 0, 0),
+					},
+				},
+			],
 		}
 
 		presets['Message'] = {

@@ -7,6 +7,9 @@ module.exports = {
 
 		const foregroundColor = combineRgb(255, 255, 255) // White
 		const backgroundColorRed = combineRgb(255, 0, 0) // Red
+		const backgroundColorGreen = combineRgb(0, 255, 0) // Green
+		const backgroundColorBlue = combineRgb(0, 0, 255) // Blue
+		const backgroundColorGray = combineRgb(125, 125, 125) // Gray
 
 		feedbacks.selectedIsRunning = {
 			type: 'boolean',
@@ -26,9 +29,9 @@ module.exports = {
 			},
 		}
 
-		feedbacks.selectedHasFinished = {
+		feedbacks.selectedisFinished = {
 			type: 'boolean',
-			name: 'Selected Event has Stopped/Finished',
+			name: 'Selected Event is Stopped/Finished',
 			description: 'If the selected event has finished, change the color of the button.',
 			defaultStyle: {
 				color: foregroundColor,
@@ -77,11 +80,83 @@ module.exports = {
 				'If incrementing or decrementing the selected event is not allowed, change the color of the button.',
 			defaultStyle: {
 				color: foregroundColor,
-				bgcolor: combineRgb(125, 125, 125), //gray
+				bgcolor: backgroundColorGray,
 			},
 			options: [],
 			callback: async function (feedback) {
 				if (self.DATA.selectedEvent?.DurationMode !== 0) {
+					return true
+				}
+
+				return false
+			},
+		}
+
+		feedbacks.vMixConnected = {
+			type: 'boolean',
+			name: 'vMix Connected',
+			description: 'If vMix is connected, change the color of the button.',
+			defaultStyle: {
+				color: foregroundColor,
+				bgcolor: backgroundColorGreen,
+			},
+			options: [],
+			callback: async function (feedback) {
+				if (self.DATA.vMixConnected == true) {
+					return true
+				}
+
+				return false
+			},
+		}
+
+		feedbacks.vMixDisconnected = {
+			type: 'boolean',
+			name: 'vMix Disconnected',
+			description: 'If vMix is disconnected, change the color of the button.',
+			defaultStyle: {
+				color: foregroundColor,
+				bgcolor: backgroundColorRed,
+			},
+			options: [],
+			callback: async function (feedback) {
+				if (self.DATA.vMixConnected == false) {
+					return true
+				}
+
+				return false
+			},
+		}
+
+		feedbacks.scte104Connected = {
+			type: 'boolean',
+			name: 'SCTE-104 Injector Connected',
+			description: 'If the SCTE-104 Injector is connected, change the color of the button.',
+			defaultStyle: {
+				color: foregroundColor,
+				bgcolor: backgroundColorGreen,
+			},
+			options: [],
+			callback: async function (feedback) {
+				if (self.DATA.scte104InjectorStatus == true) {
+					return true
+				}
+
+				return false
+			},
+		}
+
+		feedbacks.scte104Disconnected = {
+			type: 'boolean',
+			name: 'SCTE-104 Injector Disconnected',
+			description: 'If the SCTE-104 Injector is disconnected, change the color of the button.',
+			defaultStyle: {
+				color: foregroundColor,
+				bgcolor: backgroundColorRed,
+			},
+			options: [],
+			callback: async function (feedback) {
+				if (self.DATA.scte104InjectorStatus == false) {
 					return true
 				}
 
@@ -97,9 +172,17 @@ module.exports = {
 				color: foregroundColor,
 				bgcolor: backgroundColorRed,
 			},
-			options: [],
+			options: [
+				{
+					type: 'dropdown',
+					label: 'Warning Type',
+					id: 'warning',
+					choices: self.CHOICES_WARNINGS,
+					default: self.CHOICES_WARNINGS[0].id,
+				},
+			],
 			callback: async function (feedback) {
-				if (self.DATA.temporaryWarning == true) {
+				if (self.DATA.temporaryWarning == true && self.DATA.temporaryWarningType == feedback.options.warning) {
 					return true
 				}
 

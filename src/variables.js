@@ -8,8 +8,15 @@ module.exports = {
 
 		variables.push({ variableId: 'selected_name', name: 'Selected Event Name' })
 		variables.push({ variableId: 'selected_status', name: 'Selected Event Status' })
-		variables.push({ variableId: 'selected_duration', name: 'Selected Event Duration' })
-		variables.push({ variableId: 'selected_time', name: 'Selected Event Time Remaining/Elapsed' })
+
+		variables.push({ variableId: 'selected_duration_ss', name: 'Selected Event Duration (SS)' })
+		variables.push({ variableId: 'selected_duration_mmss', name: 'Selected Event Duration (MM:SS)' })
+		variables.push({ variableId: 'selected_duration_hhmmss', name: 'Selected Event Duration (HH:MM:SS)' })
+
+		variables.push({ variableId: 'selected_time_ss', name: 'Selected Event Time Remaining/Elapsed (SS)' })
+		variables.push({ variableId: 'selected_time_mmss', name: 'Selected Event Time Remaining/Elapsed (MM:SS)' })
+		variables.push({ variableId: 'selected_time_hhmmss', name: 'Selected Event Time Remaining/Elapsed (HH:MM:SS)' })
+
 		variables.push({ variableId: 'selected_duration_mode', name: 'Selected Event Duration Mode' })
 
 		variables.push({ variableId: 'scte104_injector_status_bool', name: 'SCTE 104 Injector Status Bool' })
@@ -35,8 +42,15 @@ module.exports = {
 			if (!self.DATA.selectedEvent) {
 				variableValues['selected_name'] = 'No Event Selected'
 				variableValues['selected_status'] = ''
-				variableValues['selected_duration'] = ''
-				variableValues['selected_time'] = ''
+
+				variableValues['selected_duration_ss'] = ''
+				variableValues['selected_duration_mmss'] = ''
+				variableValues['selected_duration_hhmmss'] = ''
+
+				variableValues['selected_time_ss'] = ''
+				variableValues['selected_time_mmss'] = ''
+				variableValues['selected_time_hhmmss'] = ''
+
 				variableValues['selected_duration_mode'] = ''
 				variableValues['scte104_injector_status_bool'] = ''
 				variableValues['scte104_injector_status'] = ''
@@ -49,20 +63,34 @@ module.exports = {
 				variableValues['selected_status'] = self.DATA.selectedEvent?.Status == 1 ? 'Running' : 'Stopped' || ''
 
 				if (self.DATA.selectedEvent?.DurationSeconds == 0) {
-					self.DATA.selectedEvent.DurationSeconds = ''
+					variableValues['selected_duration_ss'] = ''
+					variableValues['selected_duration_mmss'] = ''
+					variableValues['selected_duration_hhmmss'] = ''
 				} else {
-					variableValues['selected_duration'] =
-						self.convertTime(self.DATA.selectedEvent?.DurationSeconds * 1000, 'mm:ss') || '' //the function expects it in ms
+					variableValues['selected_duration_ss'] =
+						self.convertTime(self.DATA.selectedEvent?.DurationSeconds * 1000, 'ss') || '' //the function expects it in ms
+					variableValues['selected_duration_mmss'] =
+						self.convertTime(self.DATA.selectedEvent?.DurationSeconds * 1000, 'mm:ss') || ''
+					variableValues['selected_duration_hhmmss'] =
+						self.convertTime(self.DATA.selectedEvent?.DurationSeconds * 1000, 'hh:mm:ss') || ''
 				}
 
 				if (self.DATA.selectedEvent?.DurationMode == 0) {
 					// Countdown
-					variableValues['selected_time'] =
+					variableValues['selected_time_ss'] =
+						self.convertTime(self.DATA.selectedEvent?.RemainingSeconds * 1000, 'ss') || ''
+					variableValues['selected_time_mmss'] =
 						self.convertTime(self.DATA.selectedEvent?.RemainingSeconds * 1000, 'mm:ss') || ''
+					variableValues['selected_time_hhmmss'] =
+						self.convertTime(self.DATA.selectedEvent?.RemainingSeconds * 1000, 'hh:mm:ss') || ''
 				} else {
 					// Elapsed
-					variableValues['selected_time'] =
+					variableValues['selected_time_ss'] =
+						self.convertTime(self.DATA.selectedEvent?.ElapsedSeconds * 1000, 'ss') || ''
+					variableValues['selected_time_mmss'] =
 						self.convertTime(self.DATA.selectedEvent?.ElapsedSeconds * 1000, 'mm:ss') || ''
+					variableValues['selected_time_hhmmss'] =
+						self.convertTime(self.DATA.selectedEvent?.ElapsedSeconds * 1000, 'hh:mm:ss') || ''
 				}
 
 				variableValues['selected_duration_mode'] =

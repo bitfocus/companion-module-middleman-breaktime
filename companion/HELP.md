@@ -1,6 +1,6 @@
 # Middleman Software - BreakTime
 
-This module will allow you to control Middleman Software's BreakTime.
+This module controls Middleman Software's BreakTime. For more information, visit <a href="https://middleman.tv" target="_new">Middleman.tv</a>.
 
 ## Configuration Options:
 
@@ -20,9 +20,11 @@ This module will allow you to control Middleman Software's BreakTime.
 ## Feedbacks:
 
 -   Selected Event is Running
--   Selected Event has Finished
+-   Selected Event is Finished
 -   Selected Event Duration Mode is X
 -   Increase/Decrease Not Allowed
+-   SCTE104 Connected/Disconnected
+-   VMix Connected/Disconnected
 -   Temporary Warning
 
 ## Variables:

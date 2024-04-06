@@ -8,7 +8,7 @@ const feedbacks = require('./src/feedbacks')
 const variables = require('./src/variables')
 const presets = require('./src/presets')
 
-const constants = require('./src/constants')
+const defaults = require('./src/defaults')
 const api = require('./src/api')
 
 class BreakTimeInstance extends InstanceBase {
@@ -22,22 +22,9 @@ class BreakTimeInstance extends InstanceBase {
 			...feedbacks,
 			...variables,
 			...presets,
-			...constants,
+			...defaults,
 			...api,
 		})
-
-		this.WS = undefined //websocket connection to camera
-		this.INTERVAL = undefined //interval for polling data
-
-		this.DATA = {
-			runningEventsCount: 0,
-			events: [],
-			selectedEvent: undefined,
-			scte104InjectorStatus: false,
-			vmixStatus: false,
-			message: '',
-			temporaryWarning: false,
-		}
 	}
 
 	async init(config) {
@@ -65,6 +52,11 @@ class BreakTimeInstance extends InstanceBase {
 	async destroy() {
 		//close out any connections
 		this.closeConnection()
+
+		//clear any timeouts
+		if (this.WARNING_TIMEOUT) {
+			clearTimeout(this.WARNING_TIMEOUT)
+		}
 	}
 }
 
