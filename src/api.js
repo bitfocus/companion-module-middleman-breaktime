@@ -99,6 +99,10 @@ module.exports = {
 
 		self.DATA.scte104InjectorStatus = data.SCTE104TCPClient?.Connected || false //update the SCTE104 Injector status
 
+		//get the SCTE104 Splice Event ID and Segmentation Event ID
+		self.DATA.scte104SpliceEventID = data.SCTE104TCPClient?.SpliceEventID || ''
+		self.DATA.scte104SegmentationEventID = data.SCTE104TCPClient?.SegmentationEventID || ''
+
 		//check if vMix Status has gone from true to false, and issue a warning if so
 		if (self.DATA.vmixStatus && !data.vMixTCPClient?.Connected) {
 			self.issueWarning('vmix', 'vMix has disconnected.', 5000)

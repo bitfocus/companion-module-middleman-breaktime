@@ -21,6 +21,8 @@ module.exports = {
 
 		variables.push({ variableId: 'scte104_injector_status_bool', name: 'SCTE 104 Injector Status Bool' })
 		variables.push({ variableId: 'scte104_injector_status', name: 'SCTE 104 Injector Status' })
+		variables.push({ variableId: 'scte104_splice_event_id', name: 'SCTE 104 Splice Event ID' })
+		variables.push({ variableId: 'scte104_segmentation_event_id', name: 'SCTE 104 Segmentation Event ID' })
 
 		variables.push({ variableId: 'vmix_status_bool', name: 'VMix Connectivity Status Bool' })
 		variables.push({ variableId: 'vmix_status', name: 'VMix Connectivity Status' })
@@ -100,6 +102,9 @@ module.exports = {
 				variableValues['scte104_injector_status'] = self.DATA.scte104InjectorStatus
 					? 'Connected'
 					: 'Disconnected'
+
+				variableValues['scte104_splice_event_id'] = self.DATA.scte104SpliceEventID
+				variableValues['scte104_segmentation_event_id'] = self.DATA.scte104SegmentationEventID
 
 				variableValues['vmix_status_bool'] = self.DATA.vmixStatus ? 'True' : 'False'
 				variableValues['vmix_status'] = self.DATA.vmixStatus ? 'Connected' : 'Disconnected'
