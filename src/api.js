@@ -261,6 +261,11 @@ module.exports = {
 			)
 		}
 
+		if (selectedEvent.Description == null) {
+			self.log('debug', 'Description is null, setting to empty string')
+			selectedEvent.Description = ''
+		}
+
 		self.sendREST(`/api/events/${self.DATA.selectedEvent.ID}`, 'POST', selectedEvent)
 	},
 
@@ -290,6 +295,11 @@ module.exports = {
 				'debug',
 				`Decreasing ${selectedEvent.Name} Duration by ${duration}. New Duration: ${selectedEvent.DurationSeconds}`,
 			)
+		}
+
+		if (selectedEvent.Description == null) {
+			self.log('debug', 'Description is null, setting to empty string')
+			selectedEvent.Description = ''
 		}
 
 		self.sendREST(`/api/events/${self.DATA.selectedEvent.ID}`, 'POST', selectedEvent)
