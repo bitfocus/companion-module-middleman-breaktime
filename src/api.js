@@ -409,6 +409,7 @@ module.exports = {
 				.then((response) => {
 					if (response.ok) {
 						//console.log(response.json())
+						self.updateStatus(InstanceStatus.Ok) //clear any connection failure status
 					} else {
 						self.log('error', `HTTP Error: ${response.status}`)
 						self.updateStatus(InstanceStatus.ConnectionFailure, `HTTP Error: ${response.status}`)
@@ -418,6 +419,8 @@ module.exports = {
 					if (self.config.verbose) {
 						//self.log('info', `REST Response: ${JSON.stringify(data)}`)
 					}
+
+					self.updateStatus(InstanceStatus.Ok) //clear any connection failure status
 				})
 				.catch((error) => {
 					self.log('error', `REST Error: ${error}`)
