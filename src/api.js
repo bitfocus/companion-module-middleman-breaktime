@@ -15,11 +15,12 @@ module.exports = {
 			self.WS = new WebSocket(`ws://${self.config.host}:${self.config.port}/api/ws`)
 
 			self.WS.on('error', (error) => {
-				self.log('error', 'Websocket Error: ' + error.toString())
-				self.updateStatus(InstanceStatus.ConnectionFailure, `WS Error: ${error.toString()}`)
+				self.log('error', `Websocket Error [${error.code}]: ${error.message}`)
+				self.updateStatus(InstanceStatus.ConnectionFailure, `Websocket Error [${error.code}]: ${error.message}`)
+
 				//attempt to reconnect in 10 seconds
 				self.log('debug', 'Reconnecting in 10 seconds.')
-				setTimeout(() => {
+				self.RECONNECT_INTERVAL = setTimeout(() => {
 					self.initConnection()
 				}, 10000)
 			})
@@ -27,18 +28,31 @@ module.exports = {
 			self.WS.on('open', () => {
 				self.log('info', 'Websocket Connected.')
 				self.updateStatus(InstanceStatus.Ok)
+
+				clearInterval(self.RECONNECT_INTERVAL) //clear the reconnect interval if it exists
 			})
 
 			self.WS.on('message', (data) => {
 				self.processData(data)
 			})
 
-			self.WS.on('close', () => {
-				self.log('info', 'Websocket Disconnected.')
-				self.updateStatus(InstanceStatus.Warning, 'Websocket Disconnected.')
+			self.WS.on('close', (code, reason) => {
+				if (code == undefined) {
+					code = 'Unknown'
+				}
+				if (reason == undefined) {
+					reason = 'Unknown'
+				}
+
+				self.log('info', `Websocket Closed. Code: ${code}, Reason: ${reason || 'No reason provided.'}`)
+				self.updateStatus(InstanceStatus.ConnectionFailure, `Websocket Closed. Code: ${code}`)
+
+				self.WS = null // Ensure WS is set to null when closed
+				delete self.WS
+
 				//attempt to reconnect in 10 seconds
 				self.log('debug', 'Reconnecting in 10 seconds.')
-				setTimeout(() => {
+				self.RECONNECT_INTERVAL = setTimeout(() => {
 					self.initConnection()
 				}, 10000)
 			})
