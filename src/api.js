@@ -18,11 +18,12 @@ module.exports = {
 				self.log('error', `Websocket Error [${error.code}]: ${error.message}`)
 				self.updateStatus(InstanceStatus.ConnectionFailure, `Websocket Error [${error.code}]: ${error.message}`)
 
+				/*
 				//attempt to reconnect in 10 seconds
 				self.log('debug', 'Reconnecting in 10 seconds.')
 				self.RECONNECT_INTERVAL = setTimeout(() => {
 					self.initConnection()
-				}, 10000)
+				}, 10000)*/
 			})
 
 			self.WS.on('open', () => {
@@ -47,7 +48,7 @@ module.exports = {
 				self.log('info', `Websocket Closed. Code: ${code}, Reason: ${reason || 'No reason provided.'}`)
 				self.updateStatus(InstanceStatus.ConnectionFailure, `Websocket Closed. Code: ${code}`)
 
-				self.WS = null // Ensure WS is set to null when closed
+				self.WS = undefined // Ensure WS is set to null when closed
 				delete self.WS
 
 				//attempt to reconnect in 10 seconds
