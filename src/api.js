@@ -15,15 +15,11 @@ module.exports = {
 			self.WS = new WebSocket(`ws://${self.config.host}:${self.config.port}/api/ws`)
 
 			self.WS.on('error', (error) => {
-				self.log('error', `Websocket Error [${error.code}]: ${error.message}`)
-				self.updateStatus(InstanceStatus.ConnectionFailure, `Websocket Error [${error.code}]: ${error.message}`)
+				if (self.config.verbose) {
+					self.log('error', `Websocket Error [${error.code}]: ${error.message}`)
+				}
 
-				/*
-				//attempt to reconnect in 10 seconds
-				self.log('debug', 'Reconnecting in 10 seconds.')
-				self.RECONNECT_INTERVAL = setTimeout(() => {
-					self.initConnection()
-				}, 10000)*/
+				self.updateStatus(InstanceStatus.ConnectionFailure, `Failed to connect to BreakTime.`)
 			})
 
 			self.WS.on('open', () => {
@@ -46,7 +42,7 @@ module.exports = {
 				}
 
 				self.log('info', `Websocket Closed. Code: ${code}, Reason: ${reason || 'No reason provided.'}`)
-				self.updateStatus(InstanceStatus.ConnectionFailure, `Websocket Closed. Code: ${code}`)
+				self.updateStatus(InstanceStatus.ConnectionFailure, `Failed to connect to BreakTime.`)
 
 				self.WS = undefined // Ensure WS is set to null when closed
 				delete self.WS
@@ -73,7 +69,9 @@ module.exports = {
 		try {
 			data = JSON.parse(msg)
 		} catch (error) {
-			self.log('error', `Error parsing JSON from Websocket: ${error}`)
+			if (self.config.verbose) {
+				self.log('error', `Error parsing JSON from Websocket: ${error}`)
+			}
 			return
 		}
 
@@ -393,8 +391,11 @@ module.exports = {
 				self.log('warn', 'Websocket not connected. Command not sent.')
 			}
 		} catch (error) {
-			self.log('error', `WS Error: ${error}`)
-			self.updateStatus(InstanceStatus.ConnectionFailure, `WS Error: ${String(error)}`)
+			if (self.config.verbose) {
+				self.log('error', `WS Error: ${error}`)
+			}
+
+			self.updateStatus(InstanceStatus.ConnectionFailure, `Failed to connect to BreakTime.`)
 		}
 	},
 
@@ -426,8 +427,11 @@ module.exports = {
 						//console.log(response.json())
 						self.updateStatus(InstanceStatus.Ok) //clear any connection failure status
 					} else {
-						self.log('error', `HTTP Error: ${response.status}`)
-						self.updateStatus(InstanceStatus.ConnectionFailure, `HTTP Error: ${response.status}`)
+						if (self.config.verbose) {
+							self.log('error', `HTTP Error: ${response.status}`)
+						}
+
+						self.updateStatus(InstanceStatus.ConnectionFailure, `Failed to connect to BreakTime.`)
 					}
 				})
 				.then((data) => {
@@ -438,12 +442,18 @@ module.exports = {
 					self.updateStatus(InstanceStatus.Ok) //clear any connection failure status
 				})
 				.catch((error) => {
-					self.log('error', `REST Error: ${error}`)
-					self.updateStatus(InstanceStatus.ConnectionFailure, `REST Error: ${String(error)}`)
+					if (self.config.verbose) {
+						self.log('error', `REST Error: ${error}`)
+					}
+
+					self.updateStatus(InstanceStatus.ConnectionFailure, `Failed to connect to BreakTime.`)
 				})
 		} catch (error) {
-			self.log('error', `REST Error: ${error}`)
-			self.updateStatus(InstanceStatus.ConnectionFailure, `REST Error: ${String(error)}`)
+			if (self.config.verbose) {
+				self.log('error', `REST Error: ${error}`)
+			}
+
+			self.updateStatus(InstanceStatus.ConnectionFailure, `Failed to connect to BreakTime.`)
 		}
 	},
 
