@@ -19,7 +19,7 @@ module.exports = {
 					self.log('error', `Websocket Error [${error.code}]: ${error.message}`)
 				}
 
-				self.updateStatus(InstanceStatus.ConnectionFailure, `Failed to connect to BreakTime.`)
+				self.updateStatus(InstanceStatus.ConnectionFailure, `Failed to communicate with BreakTime.`)
 			})
 
 			self.WS.on('open', () => {
@@ -42,7 +42,7 @@ module.exports = {
 				}
 
 				self.log('info', `Websocket Closed. Code: ${code}, Reason: ${reason || 'No reason provided.'}`)
-				self.updateStatus(InstanceStatus.ConnectionFailure, `Failed to connect to BreakTime.`)
+				self.updateStatus(InstanceStatus.ConnectionFailure, `Failed to communicate with BreakTime.`)
 
 				self.WS = undefined // Ensure WS is set to null when closed
 				delete self.WS
@@ -395,7 +395,7 @@ module.exports = {
 				self.log('error', `WS Error: ${error}`)
 			}
 
-			self.updateStatus(InstanceStatus.ConnectionFailure, `Failed to connect to BreakTime.`)
+			self.updateStatus(InstanceStatus.ConnectionFailure, `Failed to communicate with BreakTime.`)
 		}
 	},
 
@@ -431,7 +431,7 @@ module.exports = {
 							self.log('error', `HTTP Error: ${response.status}`)
 						}
 
-						self.updateStatus(InstanceStatus.ConnectionFailure, `Failed to connect to BreakTime.`)
+						self.updateStatus(InstanceStatus.ConnectionFailure, `Failed to communicate with BreakTime.`)
 					}
 				})
 				.then((data) => {
@@ -446,14 +446,14 @@ module.exports = {
 						self.log('error', `REST Error: ${error}`)
 					}
 
-					self.updateStatus(InstanceStatus.ConnectionFailure, `Failed to connect to BreakTime.`)
+					self.updateStatus(InstanceStatus.ConnectionFailure, `Failed to communicate with BreakTime.`)
 				})
 		} catch (error) {
 			if (self.config.verbose) {
 				self.log('error', `REST Error: ${error}`)
 			}
 
-			self.updateStatus(InstanceStatus.ConnectionFailure, `Failed to connect to BreakTime.`)
+			self.updateStatus(InstanceStatus.ConnectionFailure, `Failed to communicate with BreakTime.`)
 		}
 	},
 
