@@ -1,7 +1,7 @@
 {
 	"id": "middleman-breaktime",
 	"name": "middleman-breaktime",
-	"shortname": "middleman-breaktime",
+	"shortname": "BreakTime",
 	"description": "Controls Middleman Software's BreakTime.",
 	"version": "0.0.0",
 	"license": "MIT",
@@ -26,5 +26,5 @@
 	},
 	"manufacturer": "Middleman Software",
 	"products": ["BreakTime"],
-	"keywords": ["SCTE-104"]
+	"keywords": ["SCTE", "SCTE 104"]
 }
