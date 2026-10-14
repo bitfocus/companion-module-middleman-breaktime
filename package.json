@@ -1,16 +1,19 @@
 {
 	"name": "middleman-breaktime",
-	"version": "1.0.3",
+	"version": "2.0.0",
 	"main": "index.js",
 	"scripts": {
 		"test": "echo \"Error: no test specified\" && exit 1",
 		"format": "prettier -w .",
-		"lint:raw": "eslint --ext .ts --ext .js --ignore-pattern dist --ignore-pattern pkg",
-		"lint": "yarn lint:raw ."
+		"lint": "eslint .",
+		"package": "companion-module-build --prerelease"
 	},
 	"license": "MIT",
+	"engines": {
+		"node": ">=22"
+	},
 	"dependencies": {
-		"@companion-module/base": "^1.11.2",
+		"@companion-module/base": "~1.13.5",
 		"ws": "^8.21.0"
 	},
 	"repository": {
@@ -19,15 +22,8 @@
 	},
 	"devDependencies": {
 		"@companion-module/tools": "^2.8.0",
+		"eslint": "^9",
 		"prettier": "^3.2.5"
 	},
-	"prettier": "@companion-module/tools/.prettierrc.json",
-	"lint-staged": {
-		"*.{css,json,md,scss}": [
-			"prettier --write"
-		],
-		"*.{ts,tsx,js,jsx}": [
-			"yarn lint:raw --fix"
-		]
-	}
+	"prettier": "@companion-module/tools/.prettierrc.json"
 }
