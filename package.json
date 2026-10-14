@@ -6,7 +6,8 @@
 		"test": "echo \"Error: no test specified\" && exit 1",
 		"format": "prettier -w .",
 		"lint": "eslint .",
-		"package": "companion-module-build --prerelease"
+		"package": "companion-module-build --prerelease",
+		"package:beta": "node scripts/package-beta.js"
 	},
 	"license": "MIT",
 	"engines": {
