@@ -11,8 +11,7 @@ This module controls Middleman Software's BreakTime, version 2.0 or later. For B
 
 - Module 2.x works only with BreakTime 2.0 or later. For BreakTime 1.x, use version 1.0.3 of this module.
 - Module 2.x needs Companion 4.1 or later.
-- Module 2.x is published as a prerelease while BreakTime 2.0 is in beta.
-- Tested with BreakTime 2.0.222-beta and Companion 5.1.0.
+- Tested with BreakTime 2.0.225-beta and Companion 5.1.0.
 - If the module finds BreakTime 1.x, the connection shows **Bad Config** with "BreakTime 2.0 or later required, found ...". It checks again every 60 seconds.
 
 ## Configuration
