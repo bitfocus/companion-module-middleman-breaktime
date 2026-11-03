@@ -2,5 +2,7 @@ node_modules/
 .DS_Store
 package-lock.json
 /pkg
+/dist
 /*.tgz
-.yarn/install-state.gz
+/.yarn
+DEBUG-*

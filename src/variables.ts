@@ -3,50 +3,48 @@
  *
  * `checkVariables()` is the one place that writes variable values. It builds every value
  * from `this.DATA` (`buildVariableValues()`), a signature per feedback type
- * (`buildFeedbackState()` in feedbacks.js) and a signature per event shown by an
+ * (`buildFeedbackState()` in feedbacks.ts) and a signature per event shown by an
  * `eventTile` (`buildTileSignatures()`), compares them with the snapshot of what was last
  * pushed, and sends only the changes: one batched `setVariableValues()` with the changed
  * keys, one `checkFeedbacks()` with the affected types and one `checkFeedbacksById()` with
  * the affected tiles. base diffs none of them. It runs from `processData()` on every state
- * frame, and from `refreshState()` in api.js for every other state change (init, config
- * changes, pre-connect check results, timed warnings and their expiry, disconnect, pending
- * durations, an accepted arm). The only feedback check outside it is in
- * `rebuildEventChoices()` (api.js), which re-checks every `eventTile` once when the
- * playlist changes.
+ * frame, and from `refreshState()` in api.ts for every other state change.
  *
  * A null snapshot makes the next push a full one: every value in one `setVariableValues()`
- * and one `checkFeedbacks()` for every feedback type. It is set to null at init, when a
- * socket opens, on disconnect, on a host or port change and after every
- * `setVariableDefinitions()`.
+ * and one `checkAllFeedbacks()`. It is set to null at init, when a socket opens, on
+ * disconnect, on a host or port change and after every `setVariableDefinitions()`.
  *
  * @module companion-module-middleman-breaktime
  * @see {@link https://github.com/bitfocus/companion-module-middleman-breaktime}
  */
 
-const { COMPONENTS, MAX_RUNNING_SLOTS, DEFAULT_RUNNING_SLOTS } = require('./defaults')
+import type { CompanionVariableDefinitions, CompanionVariableValue } from '@companion-module/base'
+import type { BreakTimeInstanceTypes } from './main.js'
+import type BreakTimeInstance from './main.js'
+import type { BreakTimeEvent } from './api.js'
 
-/**
- * Variable IDs of one running slot
- * @typedef {Object} SlotKeys
- * @property {string} name - `running_<n>_name`
- * @property {string} id - `running_<n>_id`
- * @property {string} durationMode - `running_<n>_duration_mode`
- * @property {string} timeSs - `running_<n>_time_ss`
- * @property {string} timeMmss - `running_<n>_time_mmss`
- * @property {string} timeHhmmss - `running_<n>_time_hhmmss`
- * @property {string} durationSs - `running_<n>_duration_ss`
- * @property {string} durationMmss - `running_<n>_duration_mmss`
- * @property {string} durationHhmmss - `running_<n>_duration_hhmmss`
- * @property {string} spliceEventId - `running_<n>_splice_event_id`
- * @property {string} segmentationEventId - `running_<n>_segmentation_event_id`
- */
+import { COMPONENTS, MAX_RUNNING_SLOTS, DEFAULT_RUNNING_SLOTS } from './defaults.js'
+
+/** Variable IDs of one running slot */
+interface SlotKeys {
+	name: string
+	id: string
+	durationMode: string
+	timeSs: string
+	timeMmss: string
+	timeHhmmss: string
+	durationSs: string
+	durationMmss: string
+	durationHhmmss: string
+	spliceEventId: string
+	segmentationEventId: string
+}
 
 /**
  * Variable IDs of every possible running slot, built once so the per-frame builder allocates no key strings
  * Index 0 is slot 1. Example: SLOT_KEYS[0].timeMmss is 'running_1_time_mmss'
- * @type {ReadonlyArray<SlotKeys>}
  */
-const SLOT_KEYS = Object.freeze(
+const SLOT_KEYS: ReadonlyArray<SlotKeys> = Object.freeze(
 	Array.from({ length: MAX_RUNNING_SLOTS }, (_unused, index) => {
 		const prefix = `running_${index + 1}_`
 
@@ -69,9 +67,8 @@ const SLOT_KEYS = Object.freeze(
 /**
  * Variable IDs of every component, built once for the same reason
  * Example: { slug: 'vmix', status: 'component_vmix', detail: 'component_vmix_detail' }
- * @type {ReadonlyArray<{slug: string, label: string, status: string, detail: string}>}
  */
-const COMPONENT_KEYS = Object.freeze(
+const COMPONENT_KEYS: ReadonlyArray<{ slug: string; label: string; status: string; detail: string }> = Object.freeze(
 	COMPONENTS.map((component) =>
 		Object.freeze({
 			slug: component.slug,
@@ -85,11 +82,10 @@ const COMPONENT_KEYS = Object.freeze(
 /**
  * Returns the `True` / `False` text of a boolean frame field
  *
- * @private
- * @param {*} value - Field value
- * @returns {'True'|'False'|''} '' when the value is not a boolean (unknown)
+ * @param value - Field value
+ * @returns '' when the value is not a boolean (unknown)
  */
-function boolText(value) {
+function boolText(value: unknown): 'True' | 'False' | '' {
 	return value === true ? 'True' : value === false ? 'False' : ''
 }
 
@@ -99,127 +95,120 @@ function boolText(value) {
  * The splice ID applies only to Splice Insert (`MessageMode` 0) and the segmentation ID
  * only to Time Signal (1); 0 means none.
  *
- * @private
- * @param {import('./api').BreakTimeEvent} event - Playlist event
- * @param {0|1} messageMode - The message mode this ID belongs to
- * @param {*} id - `ActuationSpliceEventID` or `ActuationSegmentationEventID`
- * @returns {number|''} The ID, or ''
+ * @param event - Playlist event
+ * @param messageMode - The message mode this ID belongs to
+ * @param id - `ActuationSpliceEventID` or `ActuationSegmentationEventID`
+ * @returns The ID, or ''
  */
-function eventIdFor(event, messageMode, id) {
-	return event.MessageMode === messageMode && Number.isInteger(id) && id !== 0 ? id : ''
+function eventIdFor(event: BreakTimeEvent, messageMode: 0 | 1, id: number | undefined): number | '' {
+	if (event.MessageMode === messageMode && typeof id === 'number' && Number.isInteger(id) && id !== 0) {
+		return id
+	}
+
+	return ''
 }
 
 /**
  * Returns a running event's displayed time in milliseconds: remaining for Count Down, elapsed for Count Up
  *
- * @private
- * @param {import('./api').BreakTimeEvent} event - Running event
- * @returns {number} Time in ms, NaN for an unknown duration mode (shown as '')
+ * @param event - Running event
+ * @returns Time in ms, NaN for an unknown duration mode (shown as '')
  */
-function runningTimeMs(event) {
+function runningTimeMs(event: BreakTimeEvent): number {
 	const mode = event.DurationMode
 
-	return (mode === 0 ? event.RemainingSeconds : mode === 1 ? event.ElapsedSeconds : NaN) * 1000
+	return ((mode === 0 ? event.RemainingSeconds : mode === 1 ? event.ElapsedSeconds : NaN) ?? NaN) * 1000
 }
 
 /**
  * Returns the display name of an event's duration mode
  *
- * @private
- * @param {import('./api').BreakTimeEvent} event - Playlist event
- * @returns {'Count Down'|'Count Up'|''} '' for an unknown mode
+ * @param event - Playlist event
+ * @returns '' for an unknown mode
  */
-function durationModeText(event) {
+function durationModeText(event: BreakTimeEvent): 'Count Down' | 'Count Up' | '' {
 	return event.DurationMode === 0 ? 'Count Down' : event.DurationMode === 1 ? 'Count Up' : ''
 }
 
-module.exports = {
+export const variables = {
 	/**
 	 * Registers every variable definition with Companion
 	 *
 	 * Expensive, and it replaces the whole set (base re-seeds re-added IDs as ''), so the
 	 * caller sets the snapshot to null and pushes every value afterwards. The number of
-	 * running slots comes from the normalized `runningSlots` config value.
+	 * running slots comes from the normalized `runningSlots` config value. base 2.x takes
+	 * the definitions as an object keyed by variable ID.
 	 *
-	 * @returns {void}
+	 * @returns void
 	 */
-	initVariables: function () {
-		let self = this
+	initVariables(): void {
+		const self: BreakTimeInstance = this
 
-		let variables = []
+		const variables: CompanionVariableDefinitions<BreakTimeInstanceTypes['variables']> = {}
 
-		variables.push({ variableId: 'running_events_count', name: 'Running Events Count' })
-		variables.push({ variableId: 'running_events_json', name: 'Running Events (JSON)' })
+		variables.running_events_count = { name: 'Running Events Count' }
+		variables.running_events_json = { name: 'Running Events (JSON)' }
 
-		variables.push({ variableId: 'running_latest_name', name: 'Latest Running Event Name' })
-		variables.push({ variableId: 'running_latest_id', name: 'Latest Running Event ID' })
-		variables.push({ variableId: 'running_latest_duration_mode', name: 'Latest Running Event Duration Mode' })
-		variables.push({
-			variableId: 'running_latest_time_ss',
-			name: 'Latest Running Event Time Remaining/Elapsed (Seconds)',
-		})
-		variables.push({
-			variableId: 'running_latest_time_mmss',
-			name: 'Latest Running Event Time Remaining/Elapsed (MM:SS)',
-		})
-		variables.push({
-			variableId: 'running_latest_time_hhmmss',
-			name: 'Latest Running Event Time Remaining/Elapsed (HH:MM:SS)',
-		})
+		variables.running_latest_name = { name: 'Latest Running Event Name' }
+		variables.running_latest_id = { name: 'Latest Running Event ID' }
+		variables.running_latest_duration_mode = { name: 'Latest Running Event Duration Mode' }
+		variables.running_latest_time_ss = { name: 'Latest Running Event Time Remaining/Elapsed (Seconds)' }
+		variables.running_latest_time_mmss = { name: 'Latest Running Event Time Remaining/Elapsed (MM:SS)' }
+		variables.running_latest_time_hhmmss = { name: 'Latest Running Event Time Remaining/Elapsed (HH:MM:SS)' }
 
-		variables.push({ variableId: 'selected_name', name: 'Armed Event Name' })
-		variables.push({ variableId: 'selected_status', name: 'Armed Event Status' })
+		variables.selected_name = { name: 'Armed Event Name' }
+		variables.selected_status = { name: 'Armed Event Status' }
 
-		variables.push({ variableId: 'selected_duration_ss', name: 'Armed Event Duration (Seconds)' })
-		variables.push({ variableId: 'selected_duration_mmss', name: 'Armed Event Duration (MM:SS)' })
-		variables.push({ variableId: 'selected_duration_hhmmss', name: 'Armed Event Duration (HH:MM:SS)' })
+		variables.selected_duration_ss = { name: 'Armed Event Duration (Seconds)' }
+		variables.selected_duration_mmss = { name: 'Armed Event Duration (MM:SS)' }
+		variables.selected_duration_hhmmss = { name: 'Armed Event Duration (HH:MM:SS)' }
 
-		variables.push({ variableId: 'selected_time_ss', name: 'Armed Event Time Remaining/Elapsed (Seconds)' })
-		variables.push({ variableId: 'selected_time_mmss', name: 'Armed Event Time Remaining/Elapsed (MM:SS)' })
-		variables.push({ variableId: 'selected_time_hhmmss', name: 'Armed Event Time Remaining/Elapsed (HH:MM:SS)' })
+		variables.selected_time_ss = { name: 'Armed Event Time Remaining/Elapsed (Seconds)' }
+		variables.selected_time_mmss = { name: 'Armed Event Time Remaining/Elapsed (MM:SS)' }
+		variables.selected_time_hhmmss = { name: 'Armed Event Time Remaining/Elapsed (HH:MM:SS)' }
 
-		variables.push({ variableId: 'selected_duration_mode', name: 'Armed Event Duration Mode' })
+		variables.selected_duration_mode = { name: 'Armed Event Duration Mode' }
 
 		for (let slot = 1; slot <= self.getRunningSlotCount(); slot++) {
 			const keys = SLOT_KEYS[slot - 1]
 			const label = `Running Slot ${slot}`
 
-			variables.push({ variableId: keys.name, name: `${label} Name` })
-			variables.push({ variableId: keys.id, name: `${label} Event ID` })
-			variables.push({ variableId: keys.durationMode, name: `${label} Duration Mode` })
-			variables.push({ variableId: keys.timeSs, name: `${label} Time Remaining/Elapsed (Seconds)` })
-			variables.push({ variableId: keys.timeMmss, name: `${label} Time Remaining/Elapsed (MM:SS)` })
-			variables.push({ variableId: keys.timeHhmmss, name: `${label} Time Remaining/Elapsed (HH:MM:SS)` })
-			variables.push({ variableId: keys.durationSs, name: `${label} Duration (Seconds)` })
-			variables.push({ variableId: keys.durationMmss, name: `${label} Duration (MM:SS)` })
-			variables.push({ variableId: keys.durationHhmmss, name: `${label} Duration (HH:MM:SS)` })
-			variables.push({ variableId: keys.spliceEventId, name: `${label} Splice Event ID` })
-			variables.push({ variableId: keys.segmentationEventId, name: `${label} Segmentation Event ID` })
+			variables[keys.name] = { name: `${label} Name` }
+			variables[keys.id] = { name: `${label} Event ID` }
+			variables[keys.durationMode] = { name: `${label} Duration Mode` }
+			variables[keys.timeSs] = { name: `${label} Time Remaining/Elapsed (Seconds)` }
+			variables[keys.timeMmss] = { name: `${label} Time Remaining/Elapsed (MM:SS)` }
+			variables[keys.timeHhmmss] = { name: `${label} Time Remaining/Elapsed (HH:MM:SS)` }
+			variables[keys.durationSs] = { name: `${label} Duration (Seconds)` }
+			variables[keys.durationMmss] = { name: `${label} Duration (MM:SS)` }
+			variables[keys.durationHhmmss] = { name: `${label} Duration (HH:MM:SS)` }
+			variables[keys.spliceEventId] = { name: `${label} Splice Event ID` }
+			variables[keys.segmentationEventId] = { name: `${label} Segmentation Event ID` }
 		}
 
-		variables.push({ variableId: 'scte104_injector_status_bool', name: 'SCTE 104 Injector Connected (True/False)' })
-		variables.push({ variableId: 'scte104_injector_status', name: 'SCTE 104 Injector Status' })
-		variables.push({ variableId: 'scte104_splice_event_id', name: 'Last Started Splice Event ID' })
-		variables.push({ variableId: 'scte104_segmentation_event_id', name: 'Last Started Segmentation Event ID' })
+		variables.scte104_injector_status_bool = { name: 'SCTE 104 Injector Connected (True/False)' }
+		variables.scte104_injector_status = { name: 'SCTE 104 Injector Status' }
+		variables.scte104_splice_event_id = { name: 'Last Started Splice Event ID' }
+		variables.scte104_segmentation_event_id = { name: 'Last Started Segmentation Event ID' }
 
-		variables.push({ variableId: 'vmix_status_bool', name: 'vMix Connected (True/False)' })
-		variables.push({ variableId: 'vmix_status', name: 'vMix Connectivity Status' })
+		variables.vmix_status_bool = { name: 'vMix Connected (True/False)' }
+		variables.vmix_status = { name: 'vMix Connectivity Status' }
 
 		for (const component of COMPONENT_KEYS) {
-			variables.push({ variableId: component.status, name: `${component.label} Status` })
-			variables.push({ variableId: component.detail, name: `${component.label} Status Detail` })
+			variables[component.status] = { name: `${component.label} Status` }
+			variables[component.detail] = { name: `${component.label} Status Detail` }
 		}
 
-		variables.push({ variableId: 'ha_role', name: 'HA Role' })
-		variables.push({ variableId: 'ha_acting', name: 'HA Live (True/False)' })
-		variables.push({ variableId: 'ha_link_state', name: 'HA Link State' })
-		variables.push({ variableId: 'ha_emit_ready', name: 'HA Ready to Send (True/False)' })
+		variables.ha_role = { name: 'HA Role' }
+		variables.ha_acting = { name: 'HA Live (True/False)' }
+		variables.ha_link_state = { name: 'HA Link State' }
+		variables.ha_emit_ready = { name: 'HA Ready to Send (True/False)' }
 
-		variables.push({ variableId: 'message', name: 'Current Message' })
-		variables.push({ variableId: 'warning', name: 'Warning Showing (True/False)' })
+		variables.message = { name: 'Current Message' }
+		variables.warning = { name: 'Warning Showing (True/False)' }
 
-		variables.push({ variableId: 'breaktime_version', name: 'BreakTime Version' })
-		variables.push({ variableId: 'breaktime_security', name: 'BreakTime Security' })
+		variables.breaktime_version = { name: 'BreakTime Version' }
+		variables.breaktime_security = { name: 'BreakTime Security' }
 
 		self.setVariableDefinitions(variables)
 	},
@@ -227,10 +216,12 @@ module.exports = {
 	/**
 	 * Returns the configured number of running slots
 	 *
-	 * @returns {number} The normalized `runningSlots` value, DEFAULT_RUNNING_SLOTS before config is applied
+	 * @returns The normalized `runningSlots` value, DEFAULT_RUNNING_SLOTS before config is applied
 	 */
-	getRunningSlotCount: function () {
-		return this.config?.runningSlots ?? DEFAULT_RUNNING_SLOTS
+	getRunningSlotCount(): number {
+		const self: BreakTimeInstance = this
+
+		return self.config.runningSlots ?? DEFAULT_RUNNING_SLOTS
 	},
 
 	/**
@@ -239,10 +230,10 @@ module.exports = {
 	 * Runs on every state frame (hot path) and after every other state change. Throws are
 	 * not caught here: `processData()` and `refreshState()` wrap every caller.
 	 *
-	 * @returns {void}
+	 * @returns void
 	 */
-	checkVariables: function () {
-		let self = this
+	checkVariables(): void {
+		const self: BreakTimeInstance = this
 
 		const values = self.buildVariableValues()
 		const feedbacks = self.buildFeedbackState()
@@ -251,11 +242,11 @@ module.exports = {
 
 		if (previous === null) {
 			self.setVariableValues(values)
-			self.checkFeedbacks()
+			self.checkAllFeedbacks()
 		} else {
-			let changedValues = null
-			let changedTypes = null
-			let changedTiles = null
+			let changedValues: Record<string, CompanionVariableValue> | null = null
+			let changedTypes: string[] | null = null
+			let changedTiles: string[] | null = null
 
 			for (const variableId in values) {
 				if (values[variableId] !== previous.values[variableId]) {
@@ -283,7 +274,8 @@ module.exports = {
 			}
 
 			if (changedTypes !== null) {
-				self.checkFeedbacks(...changedTypes)
+				// changedTypes is non-empty here; checkFeedbacks requires at least one type
+				self.checkFeedbacks(...(changedTypes as [string, ...string[]]))
 			}
 
 			if (changedTiles !== null) {
@@ -301,10 +293,11 @@ module.exports = {
 	 * raised or expiring, every frame (including the alarm going from non-null to null), and
 	 * a disconnect (the alarm is null while the WebSocket is down).
 	 *
-	 * @returns {string} Message text
+	 * @returns Message text
 	 */
-	getMessageText: function () {
-		const DATA = this.DATA
+	getMessageText(): string {
+		const self: BreakTimeInstance = this
+		const DATA = self.DATA
 
 		if (DATA.temporaryWarning) {
 			return DATA.warningText
@@ -316,34 +309,21 @@ module.exports = {
 	/**
 	 * Builds every variable value from the cached BreakTime state
 	 *
-	 * The status variables (SCTE 104, vMix, components, `message`, `warning`) are always
-	 * computed, whether or not anything is armed. Armed (`selected_*`) values:
-	 * - nothing armed: `selected_name` is `No Event Armed`, everything else ''.
-	 * - run state unknown (WebSocket down, the event keeps only ID and name):
-	 *   `selected_status` is `Unknown`, the mode, durations and times are ''.
-	 * - durations are the armed event's `DurationSeconds`, or a pending Set Armed Duration
-	 *   target no frame shows yet (`getArmedDuration()`), so the Operator Panel START label
-	 *   follows a press at once, like the duration buttons and the armed tile.
-	 * - times: Count Down shows `RemainingSeconds` while running and the duration above
-	 *   when stopped; Count Up shows `ElapsedSeconds` while running and 0 when stopped.
-	 * - durations are '' at 0 s (1.0.3 behavior, lead decision); `_ss` values are numbers.
+	 * The status variables are always computed. Armed (`selected_*`) values: `No Event Armed`
+	 * with nothing armed; `Unknown` status with the mode, durations and times '' while the run
+	 * state is unknown; otherwise the armed event's duration (or a pending Set Armed Duration
+	 * target) and its live time. Durations are '' at 0 s (1.0.3 behavior). Each running slot
+	 * shows the event that holds it; empty slots are ''. The running count, every slot, the
+	 * latest running values and `running_events_json` are '' while the WebSocket is down.
 	 *
-	 * Each running slot shows the event that holds it (an event keeps its slot until it
-	 * ends, see `assignRunningSlots()` in api.js); empty slots are ''. The latest running
-	 * values show the newest running event, the one End `latest` ends. The running count,
-	 * every slot, the latest running values and `running_events_json` are '' while the
-	 * WebSocket is down, so "unknown" never reads as "nothing running". HA values are ''
-	 * while the WebSocket is down; a component whose key is missing (or any component while
-	 * down) is `Unknown`.
-	 *
-	 * @returns {Object<string, string|number>} Every variable value, keyed by variable ID
+	 * @returns Every variable value, keyed by variable ID
 	 */
-	buildVariableValues: function () {
-		let self = this
+	buildVariableValues(): Record<string, string | number> {
+		const self: BreakTimeInstance = this
 
 		const DATA = self.DATA
 		const armed = DATA.selectedEvent
-		const values = {}
+		const values: Record<string, string | number> = {}
 
 		values.running_events_count = DATA.runningEventsCount
 
@@ -361,13 +341,13 @@ module.exports = {
 			const countDown = armed.DurationMode === 0
 			const countUp = armed.DurationMode === 1
 			// A pending Set Armed Duration target, so START and the duration readouts follow a press at once
-			const durationSeconds = self.getArmedDuration()
+			const durationSeconds = self.getArmedDuration() ?? NaN
 			const durationMs = durationSeconds === 0 ? NaN : durationSeconds * 1000
 
 			let timeMs = NaN
 
 			if (armed.Status === 1) {
-				timeMs = (countDown ? armed.RemainingSeconds : countUp ? armed.ElapsedSeconds : NaN) * 1000
+				timeMs = ((countDown ? armed.RemainingSeconds : countUp ? armed.ElapsedSeconds : NaN) ?? NaN) * 1000
 			} else if (armed.Status === 0) {
 				timeMs = countDown ? durationSeconds * 1000 : countUp ? 0 : NaN
 			}
@@ -419,24 +399,18 @@ module.exports = {
 	/**
 	 * Adds the running slot values, the latest running values and `running_events_json` to a value set
 	 *
-	 * Each slot shows the event that holds it in `DATA.slotEvents` (fixed slots, filled by
-	 * `assignRunningSlots()` in api.js). The latest running values (`running_latest_*`)
-	 * show `DATA.running[0]`, the newest running event by `StartMS` and the one End
-	 * `latest` ends. Times: `RemainingSeconds` for Count Down, `ElapsedSeconds` for Count
-	 * Up. Slot durations are '' at 0 s, like the armed ones. The JSON lists every running
-	 * event (not only those holding a slot), newest first, as an object with the keys `id`,
-	 * `name`, `durationMode`, `durationSeconds`, `elapsedSeconds`, `remainingSeconds`,
-	 * `messageMode`, `spliceEventId`, `segmentationEventId` and `slot`. Modes are
-	 * integers, `remainingSeconds` is null for Count Up, an SCTE event ID is null when it
-	 * does not apply to the event's message mode (or is 0), and `slot` is the event's fixed
-	 * slot number, or null while it has no slot (more events running than slots).
+	 * Each slot shows the event that holds it in `DATA.slotEvents` (fixed slots). The latest
+	 * running values show `DATA.running[0]`, the newest running event. Times: `RemainingSeconds`
+	 * for Count Down, `ElapsedSeconds` for Count Up. Slot durations are '' at 0 s. The JSON
+	 * lists every running event, newest first, with integer modes, a null `remainingSeconds`
+	 * for Count Up, null SCTE IDs where they do not apply, and `slot` null while an event has
+	 * no slot.
 	 *
-	 * @private
-	 * @param {Object<string, string|number>} values - Value set to fill
-	 * @returns {void}
+	 * @param values - Value set to fill
+	 * @returns void
 	 */
-	buildRunningValues: function (values) {
-		let self = this
+	buildRunningValues(values: Record<string, string | number>): void {
+		const self: BreakTimeInstance = this
 
 		const DATA = self.DATA
 		const running = DATA.running
@@ -464,7 +438,7 @@ module.exports = {
 			}
 
 			const timeMs = runningTimeMs(event)
-			const durationMs = event.DurationSeconds === 0 ? NaN : event.DurationSeconds * 1000
+			const durationMs = event.DurationSeconds === 0 ? NaN : (event.DurationSeconds ?? NaN) * 1000
 
 			values[keys.name] = event.Name ?? ''
 			values[keys.id] = event.ID ?? ''
@@ -520,4 +494,7 @@ module.exports = {
 			)
 		}
 	},
-}
+} satisfies ThisType<BreakTimeInstance>
+
+/** The shape the `variables` methods add to the module class */
+export type VariablesMixin = typeof variables

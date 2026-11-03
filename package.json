@@ -1,20 +1,24 @@
 {
 	"name": "middleman-breaktime",
 	"version": "2.0.0",
-	"main": "index.js",
+	"type": "module",
+	"main": "dist/main.js",
 	"scripts": {
 		"test": "echo \"Error: no test specified\" && exit 1",
 		"format": "prettier -w .",
 		"lint": "eslint .",
-		"package": "companion-module-build",
-		"package:beta": "node scripts/package-beta.js"
+		"typecheck": "tsc --noEmit",
+		"build": "tsc",
+		"package": "yarn build && companion-module-build",
+		"package:beta": "yarn build && node scripts/package-beta.cjs"
 	},
 	"license": "MIT",
 	"engines": {
-		"node": ">=22"
+		"node": "^22.20 || ^26.5"
 	},
+	"packageManager": "yarn@4.18.1",
 	"dependencies": {
-		"@companion-module/base": "~1.13.5",
+		"@companion-module/base": "~2.2.2",
 		"ws": "^8.21.0"
 	},
 	"repository": {
@@ -22,9 +26,13 @@
 		"url": "git+https://github.com/bitfocus/companion-module-middleman-breaktime.git"
 	},
 	"devDependencies": {
-		"@companion-module/tools": "^2.8.0",
-		"eslint": "^9",
-		"prettier": "^3.2.5"
+		"@companion-module/tools": "^3.2.0",
+		"@types/node": "^22.20.0",
+		"@types/ws": "^8.18.2",
+		"eslint": "^10",
+		"prettier": "^3.2.5",
+		"typescript": "~6.0.3",
+		"typescript-eslint": "^8.56.1"
 	},
 	"prettier": "@companion-module/tools/.prettierrc.json"
 }

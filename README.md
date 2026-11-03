@@ -7,12 +7,12 @@ Bitfocus Companion module for Middleman Software's BreakTime.
 | Module | BreakTime     | Companion     | Node runtime |
 | ------ | ------------- | ------------- | ------------ |
 | 1.x    | 1.1           | 3.5 and later | node18       |
-| 2.x    | 2.0 and later | 4.1 and later | node22       |
+| 2.x    | 2.0 and later | 5.1 and later | node22       |
 
 - Module 1.x is built on `@companion-module/base` ^1.11.2, which Companion supports from 3.5.
-- Module 2.x is built on `@companion-module/base` ~1.13.5.
+- Module 2.x is built on `@companion-module/base` ~2.2.2, which Companion supports from 5.1.
 - For BreakTime 1.1, use module v1.0.3: 2.x reports BreakTime 1.x as unsupported.
-- Tested with BreakTime 2.0.225-beta and Companion 5.1.0.
+- Tested with BreakTime 2.0.227-beta and Companion 5.1.1.
 
 ## Building
 
@@ -21,4 +21,4 @@ Bitfocus Companion module for Middleman Software's BreakTime.
 - Beta builds need a full clone with everything committed. To build with uncommitted changes anyway, for local testing only, use `yarn package:beta --allow-dirty`; it prints a warning.
 - After a release, raise `"version"` in package.json before building more betas, or they sort below that release.
 
-See [HELP.md](./companion/HELP.md), [LICENSE](./LICENSE) and [THIRD-PARTY-NOTICES.txt](./THIRD-PARTY-NOTICES.txt)
+See [HELP.md](./companion/HELP.md), [LICENSE](./LICENSE.md) and [THIRD-PARTY-NOTICES.txt](./THIRD-PARTY-NOTICES.txt)

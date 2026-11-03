@@ -1,3 +1,4 @@
 package.json
-/LICENSE
+/LICENSE.md
 .github/ISSUE_TEMPLATE
+/dist

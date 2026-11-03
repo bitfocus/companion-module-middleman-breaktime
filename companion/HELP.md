@@ -10,8 +10,8 @@ This module controls Middleman Software's BreakTime, version 2.0 or later. For B
 | 2.x    | 2.0 and later |
 
 - Module 2.x works only with BreakTime 2.0 or later. For BreakTime 1.x, use version 1.0.3 of this module.
-- Module 2.x needs Companion 4.1 or later.
-- Tested with BreakTime 2.0.225-beta and Companion 5.1.0.
+- Module 2.x needs Companion 5.1 or later.
+- Tested with BreakTime 2.0.227-beta and Companion 5.1.1.
 - If the module finds BreakTime 1.x, the connection shows **Bad Config** with "BreakTime 2.0 or later required, found ...". It checks again every 60 seconds.
 
 ## Configuration
@@ -41,7 +41,7 @@ Changing Show Advanced Settings, Verbose Logging, Log Raw BreakTime Data, Runnin
 These match the BreakTime UI.
 
 - **Armed** is the one event BreakTime fires next. It moves on after every Start: BreakTime arms the entry after the started event in playlist order, wrapping to the top, even if that entry is already running.
-- **Running** events are the events on air now. Several can run at once.
+- **Running** events are the events running now. Several can run at once.
 
 Module 1.x called the armed event "Selected", which hid the fact that it moves. Stored action, feedback and variable IDs are unchanged, so existing buttons keep working; only the names say "Armed" now.
 
@@ -54,7 +54,7 @@ Each running event gets a numbered slot, with its own variables and a Running Sl
 - When the module starts (including after a Companion restart or re-enabling the connection) and after a host or port change, the events already running get slots oldest first.
 - While the module is not connected the slots are blank. When it reconnects to the same BreakTime, an event that is still running gets its old slot back.
 - Lowering Running Event Slots frees the slots above the new number. Raising it gives a slot straight away to running events that had none. Events in the remaining slots keep them.
-- The **latest running** variables always show the newest running event: the one End Running Event ends with its default "Latest running" target. The END buttons in the presets show it, so they always name the event they will end.
+- The **latest running** variables always show the newest running event: the one End Running Event ends with its default "Latest running" target. The Playlist **Status Countdown** tile shows its remaining time.
 
 ## Starting events
 
@@ -63,7 +63,7 @@ There are two Start actions:
 - **Start Event** starts the armed event (the default, "Armed event (as shown in Companion)") or a specific event. It fires exactly the event the module shows.
     - It refuses an event that is already running ("Event is already running") and sends nothing.
     - With the armed default, it refuses while the module is not connected ("Not connected to BreakTime"), because the armed event it last saw may be out of date. A specific event is still sent.
-    - "Only when no event is running" (default off) refuses the start while any event is on air ("Another event is already running") and while the module is not connected ("Not connected to BreakTime").
+    - "Only when no event is running" (default off) refuses the start while any event is running ("Another event is already running") and while the module is not connected ("Not connected to BreakTime").
 - **Start Armed Event** asks BreakTime to start whatever BreakTime has armed. It works even while the module is disconnected, because BreakTime reads its own arm.
     - Each Start moves the arm to the next playlist entry, as long as the start was actually sent. If that entry is already running, a further Start Armed Event is refused with an Action Problem warning.
     - After "Not confirmed by BreakTime", check what is running before you press Start Armed again: pressing again starts the next event.
@@ -85,7 +85,7 @@ Latest and All are refused while the module is not connected ("Not connected to 
 A second Start press within half a second of a Start press that was sent is ignored: nothing is sent, the Event Related warning shows "Pressed again within 0.5 s", and the log shows `outcome=NotSent`. If a warning other than an Event Related one is already showing, such as BreakTime's answer to the first press, that warning stays on screen instead. End works the same way. Start Event and Start Armed Event share one half second, and every End Running Event target shares another, so an End right after a Start still acts.
 
 - The half second counts from the last press that was sent. An ignored press does not extend it.
-- Otherwise every press acts. A second Start of the armed event (Start Event with the armed default, or Start Armed Event) while an event is on air starts the next armed event, unless that event is already running. A second Start Event for a specific event that is now running is refused ("Event is already running"). A second End with the Latest running target ends the next latest running event.
+- Otherwise every press acts. A second Start of the armed event (Start Event with the armed default, or Start Armed Event) while an event is running starts the next armed event, unless that event is already running. A second Start Event for a specific event that is now running is refused ("Event is already running"). A second End with the Latest running target ends the next latest running event.
 - After each accepted Start or End the module asks BreakTime for an update at once, so the armed event, the running events and the END buttons show the change straight away.
 - When the connection to BreakTime drops, or the host or port changes, the half second is cleared.
 
@@ -106,32 +106,86 @@ A second Start press within half a second of a Start press that was sent is igno
 
 **Running events:** An event's duration can't be changed once it has started. The START already signaled it downstream, and SCTE 35/104 provide no way to re-signal it. End the event early instead.
 
-## Operator Panel
+## Presets
 
-The **Operator Panel** preset category builds a button panel for an operator: pick the event, pick its duration, START, END.
+The presets are ready-made buttons you drag onto your Stream Deck (or other surface) and arrange however suits your show; there is no fixed layout to follow. They are all styled the same way, so a panel you build from them reads at a glance.
 
-Suggested layout:
+### What the colours mean
 
-- Top row: one event tile per playlist event, named after the event.
-- Second row: the duration buttons **0:30**, **1:00**, **1:30**, **2:00** and **3:00**.
-- Bottom row: **START**, **END**, **END ALL** and **Panel Status**.
+One colour, one meaning, on every preset:
 
-Colors: **red** means on air, **amber** means armed and ready, **dark gray** means idle.
+- **Dark gray** - idle. Nothing is happening; the button is ready to press.
+- **Amber** - armed and ready: the event that will fire next, and the Start button.
+- **Red** - running: a running event, and the End buttons while an event is running.
+- **Green** - the armed event's current duration, and a connected output (SCTE 104, vMix).
+- **Grey** - not available now: the idle-only Start while an event is already running.
+- **Dimmed text** - the button cannot do anything right now (for example, you cannot change a duration while the event is running).
 
-- **Event tiles** show the event's name and duration, with a live countdown (or elapsed time for Count Up) while on air. Pressing a tile arms that event. A tile whose event was deleted shows "(removed)". One tile preset exists per event, and the list updates when the playlist changes.
-- **Duration buttons** set the armed event's duration. The current duration is green; the buttons are dimmed when the duration cannot change. The seconds field accepts variables, so a button can be retargeted without editing code.
-- **START** names exactly what it will fire (armed event and duration), and is amber when that event is ready to start. While any event is on air, START keeps its text and gets a thin red frame; a press then starts the armed event, which you can choose with the event tiles. If the armed event is itself on air, START is dimmed and a press sends nothing ("Event is already running"). A second press within half a second is ignored.
-- **END** is blank while nothing is on air; pressing it then sends nothing. While an event runs it turns red and shows the latest running event and its time; pressing it ends that event. A second press within half a second is ignored.
-- **END ALL** appears only while two or more events run.
-- **Panel Status** shows the current message: amber during any warning, red "STANDBY" on a paired standby instance.
+The **Status Countdown** tiles use a band of their own: green with plenty of time left, amber as the time gets short, red in the final seconds, and black while nothing is counting down.
 
-Event tiles store the event ID. A JSON playlist import keeps event IDs; an XLS import creates new ones, so drag the event tiles again after an XLS import.
+Each transport button also carries a small picture so you can find it without reading the label: a play triangle for Start, a stop square for End, a lightning bolt for End Now, two stacked squares for End All, arrows for Previous and Next, and plus/minus for the duration nudges. Every button keeps one text size, so a tile does not jump in size when its event arms or starts running.
 
-**Event names containing `$(` or `\n`:** event tiles show the name exactly as typed. Buttons that show the name through a variable, such as START, END, Running Slot and Armed Event Name, may show something else: Companion reads `$(...)` inside a variable as another variable, and a typed backslash followed by `n` or `r` as a line break (followed by `t`, as a tab). The variables themselves always hold the name as typed.
+The presets come in four categories: two single-event workflows, a playlist workflow, and a set of display-only readouts.
+
+### Simple Workflow (Fixed)
+
+For a single event with a small set of fixed lengths. Nine buttons:
+
+- **Set Duration 0:30 / 1:00 / 1:30 / 2:00 / 3:00** - set the armed event to that length. Works only while the armed event is a stopped Count Down event. The one that matches the current duration turns green.
+- **Start (Armed, Idle Only)** - starts the armed event, with a play triangle. Works only while nothing is running, and dims while an event is running so you cannot start a second.
+- **End (Latest Running)** - ends the latest running event cleanly, with pre-roll and correction. A stop square. Turns red while an event is running, and dims while nothing is running.
+- **End Now (Crash Out)** - the same End, but immediate, with no pre-roll or correction. A lightning bolt; reach for it only when you need the event to stop right now. Time Signal events have no crash-out.
+- **Status Countdown** - the armed event's remaining time on a black tile. It turns green, then amber, then red as the time runs down, and stays black while the armed event is stopped or counting up.
+
+### Simple Workflow (Variable)
+
+The same single-event workflow, but you trim the length on the fly instead of picking a fixed one. Eight buttons:
+
+- **Armed Duration +30s / -30s / +5s / -5s** - add or take off that many seconds, with plus and minus pictures. Works only while the armed event is a stopped Count Down event; the text dims when it is not allowed.
+- **Start (Armed, Idle Only)**, **End (Latest Running)**, **End Now (Crash Out)** - the same three transport buttons as the Fixed category.
+- **Status Countdown** - the same armed-event countdown tile.
+
+### Playlist Workflow
+
+For a playlist of events that may overlap. Nine buttons:
+
+- **Next Event (readout)** - the name and duration of the armed event, the next to start. Display only.
+- **Previous Event** / **Next Event** - arm the previous or next event in the playlist, with left and right arrows. They wrap around at the ends.
+- **Armed Duration +5s / -5s** - trim the armed event's duration. Works only while it is a stopped Count Down event.
+- **Start (Armed)** - starts the armed event, with a play triangle. A playlist can run several events at once, so this does not block while an event is already running.
+- **End Now (Crash Out)** - ends the latest running event immediately, with no pre-roll or correction. A lightning bolt; turns red while an event is running. Time Signal events have no crash-out.
+- **End All Running** - ends every running event at once, with two stacked squares. Turns red while one or more events are running.
+- **Status Countdown** - the latest running event's remaining time on a black tile. It turns green, then amber, then red as the time runs down, and stays black while nothing is running, or the latest event is counting up.
+
+### Info & Status
+
+Plain readouts for building your own display. Each is display only:
+
+- **Armed Event Name** - the name of the armed event.
+- **Armed Event Status** - the armed event's status. Turns red while it is running, and dims while it is stopped.
+- **Armed Event Duration** - the armed event's set duration.
+- **Armed Event Time** - the armed event's time remaining (Count Down) or elapsed (Count Up).
+- **Armed Event Duration Mode** - whether the armed event is Count Up or Count Down. Turns green while it is Count Down.
+- **Running Count** - how many events are running. Turns red while one or more are running.
+- **Status / Message** - shows **No Warnings** at rest, so it is never blank. It turns amber with the warning message while a warning is showing or a standing HA role alarm is present (the one place amber means a warning, not "armed"), and red **STANDBY** when this BreakTime is the standby instance of a pair.
+- **SCTE 104 Link** / **vMix Link** - the connection to that output. Turns green when connected and red when it is switched on in BreakTime but disconnected, and stays dark gray otherwise.
+
+### Building other buttons
+
+A few buttons from earlier versions are no longer presets, but everything they used is still in the module, so you can build them by hand from the actions, feedbacks and variables:
+
+- **One tile per event** - add the **Arm Event** action for that event and the **Event Tile** feedback, which styles the button as an event tile: the event's name and duration, amber while it is armed, red with a live countdown (or elapsed time, for a Count Up event) while it is running, and "(removed)" for an event you deleted.
+- **One tile per running slot** - show the `running_N_*` variables and add the **Running Slot Time Remaining Below** feedback to turn the tile red near the end. An event keeps its slot until it ends.
+- **Start a specific event** - add the **Start Event** action and pick that event instead of the armed default.
+
+### Notes
+
+- Event tiles remember their event by its ID. A JSON playlist import keeps those IDs, so your tiles keep working; an XLS import makes new IDs, so drag the event tiles onto your buttons again after one.
+- **Event names containing `$(` or `\n`:** event tiles show the name exactly as typed. Buttons that show the name through a variable, such as the End buttons, Running Slot and Armed Event Name, may show something else, because Companion reads `$(...)` inside a variable as another variable and a typed backslash before `n`, `r` or `t` as a line break or a tab. The variables themselves always hold the name as typed.
 
 ## Playlist imports
 
-JSON imports keep event IDs, so buttons and tiles that name an event keep working. XLS imports create new event IDs: re-select the event in actions and feedbacks that name one, and drag the Operator Panel event tiles again.
+JSON imports keep event IDs, so buttons and tiles that name an event keep working. XLS imports create new event IDs: re-select the event in actions and feedbacks that name one, and drag the event tiles onto your buttons again.
 
 ## HA pairs
 
@@ -151,7 +205,7 @@ IDs are unchanged, but some values changed. Update triggers and expressions that
 - Status values can be `Disabled` or `Unknown` as well as `Connected` and `Disconnected`.
 - SCTE 104 reads Connected when the SCTE 104 Client **or** the SCTE 104 Server is connected (1.x read only the client).
 - `selected_status` can be `Unknown` (not connected).
-- The Armed Event Status preset (Selected Event Status in 1.x) no longer has its red entry; it never fired in 1.x.
+- The Armed Event Status preset (Selected Event Status in 1.x) traded its old red entry, which tracked "finished" and never fired in 1.x, for one that turns red while the armed event is running.
 
 Display names that changed (IDs unchanged):
 
@@ -184,8 +238,8 @@ Display names that changed (IDs unchanged):
 | Variable | Temporary Warning Activated                              | Warning Showing (True/False)                                     |
 | Option   | Warning Type: SCTE 104 Injector Status                   | Warning Type: SCTE 104 Disconnected                              |
 | Option   | Warning Type: VMix Connectivity Status                   | Warning Type: vMix Disconnected                                  |
-| Preset   | Start Selected Event                                     | Start Event                                                      |
-| Preset   | End Selected Event                                       | End Running Event                                                |
+| Preset   | Start Selected Event                                     | Start Specific Event                                             |
+| Preset   | End Selected Event                                       | End (Latest Running)                                             |
 | Preset   | Select Next Event                                        | Arm Next                                                         |
 | Preset   | Select Previous Event                                    | Arm Previous                                                     |
 | Preset   | Increase Duration 5 Seconds                              | Armed Duration +5s                                               |
@@ -195,12 +249,14 @@ Display names that changed (IDs unchanged):
 | Preset   | Selected Event Duration                                  | Armed Event Duration                                             |
 | Preset   | Selected Event Time Remaining/Elapsed                    | Armed Event Time Remaining/Elapsed                               |
 | Preset   | Selected Event Duration Mode                             | Armed Event Duration Mode                                        |
-| Preset   | SCTE 104 Injector Status Bool                            | SCTE 104 Injector Connected (True/False)                         |
-| Preset   | VMix Connectivity Status, VMix Connectivity Status Bool  | vMix Connectivity Status, vMix Connected (True/False)            |
+| Preset   | SCTE 104 Injector Status Bool                            | SCTE 104 Link                                                    |
+| Preset   | VMix Connectivity Status, VMix Connectivity Status Bool  | vMix Link                                                        |
 
 The two explanatory text blocks under the logging checkboxes on the config page are gone: each of the two fields has a tooltip in its place. Log Raw BreakTime Data now logs only while Verbose Logging is on, and appears only then. Both logging checkboxes are now under Show Advanced Settings. If Log Raw BreakTime Data was on and Verbose Logging was off, upgrading to 2.x turns Log Raw BreakTime Data off, so turning on Verbose Logging later does not also start logging every update from BreakTime.
 
-Unchanged: the vMix Connected, vMix Disconnected and Temporary Warning feedbacks, the Event Related, Increase Duration Not Allowed and Decrease Duration Not Allowed warning types, and the Running Events Count, SCTE 104 Injector Status and Current Message variables and presets.
+Unchanged: the vMix Connected, vMix Disconnected and Temporary Warning feedbacks, the Event Related, Increase Duration Not Allowed and Decrease Duration Not Allowed warning types, and the Running Events Count, SCTE 104 Injector Status and Current Message variables.
+
+The presets were rebuilt in 2.x as styled building blocks you place and arrange yourself, so the preset names and looks changed (see Presets); the actions, feedbacks and variables behind them are unchanged.
 
 ## Reference
 
@@ -220,27 +276,28 @@ Unchanged: the vMix Connected, vMix Disconnected and Temporary Warning feedbacks
 
 ### Feedbacks
 
-| Feedback                          | Options                                                                                | On when                                                                                                          |
-| --------------------------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Armed Event is Running            | -                                                                                      | The armed event is running.                                                                                      |
-| Armed Event is Stopped            | -                                                                                      | An event is armed and stopped.                                                                                   |
-| Armed Event Duration Mode         | Mode: Count Up (default) or Count Down                                                 | The armed event uses that mode.                                                                                  |
-| Armed Duration Change Not Allowed | -                                                                                      | Nothing is armed, the armed event counts up or is running, or Companion is not connected to BreakTime.           |
-| Armed Duration Is                 | Seconds (variables allowed, default 60)                                                | The armed Count Down event has exactly that duration.                                                            |
-| Event is Running                  | Target: Any event (default), Armed event, Specific event. Event (for Specific event).  | That event (or any event) is running.                                                                            |
-| Running Slot Time Remaining Below | Slot (variables allowed, default 1, 1 to 32). Seconds (variables allowed, default 10). | The Count Down event in that running slot has less time left.                                                    |
-| Running Event Count At Least      | Count (default 2)                                                                      | At least that many events are running.                                                                           |
-| Event Tile                        | Event                                                                                  | Always (advanced feedback): styles the button as an event tile (see Operator Panel).                             |
-| vMix Connected                    | -                                                                                      | vMix is connected.                                                                                               |
-| vMix Disconnected                 | -                                                                                      | vMix is enabled in BreakTime but not connected.                                                                  |
-| SCTE 104 Injector Connected       | -                                                                                      | The SCTE 104 Client or Server is connected.                                                                      |
-| SCTE 104 Injector Disconnected    | -                                                                                      | SCTE 104 is enabled in BreakTime but neither the Client nor the Server is connected.                             |
-| Component Status                  | Component (default Stream Injector). Status (default Unhealthy).                       | That component has that status.                                                                                  |
-| HA Live                           | -                                                                                      | This instance is the live one. Also on for a BreakTime licensed as Primary that is not paired.                   |
-| HA Standby                        | -                                                                                      | This instance is paired and is not the live one.                                                                 |
-| HA Link State                     | State: Inactive (standalone), Connecting, Connected, Degraded (default)                | The link between the pair is in that state.                                                                      |
-| HA Ready to Send                  | -                                                                                      | This instance is licensed, has an SCTE 35 PID set or the SDI Injector on, and has at least one output connected. |
-| Temporary Warning                 | Warning Type (default Event Related), or Any warning                                   | A warning of that type is showing.                                                                               |
+| Feedback                          | Options                                                                                | On when                                                                                                                                                                      |
+| --------------------------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Armed Event is Running            | -                                                                                      | The armed event is running.                                                                                                                                                  |
+| Armed Event is Stopped            | -                                                                                      | An event is armed and stopped.                                                                                                                                               |
+| Armed Event Duration Mode         | Mode: Count Up (default) or Count Down                                                 | The armed event uses that mode.                                                                                                                                              |
+| Armed Duration Change Not Allowed | -                                                                                      | Nothing is armed, the armed event counts up or is running, or Companion is not connected to BreakTime.                                                                       |
+| Armed Duration Is                 | Seconds (variables allowed, default 60)                                                | The armed Count Down event has exactly that duration.                                                                                                                        |
+| Event is Running                  | Target: Any event (default), Armed event, Specific event. Event (for Specific event).  | That event (or any event) is running.                                                                                                                                        |
+| Running Slot Time Remaining Below | Slot (variables allowed, default 1, 1 to 32). Seconds (variables allowed, default 10). | The Count Down event in that running slot has less time left.                                                                                                                |
+| Running Event Count At Least      | Count (default 2)                                                                      | At least that many events are running.                                                                                                                                       |
+| Event Tile                        | Event                                                                                  | Always (advanced feedback): styles the button as an event tile (see Presets).                                                                                                |
+| vMix Connected                    | -                                                                                      | vMix is connected.                                                                                                                                                           |
+| vMix Disconnected                 | -                                                                                      | vMix is enabled in BreakTime but not connected.                                                                                                                              |
+| SCTE 104 Injector Connected       | -                                                                                      | The SCTE 104 Client or Server is connected.                                                                                                                                  |
+| SCTE 104 Injector Disconnected    | -                                                                                      | SCTE 104 is enabled in BreakTime but neither the Client nor the Server is connected.                                                                                         |
+| Component Status                  | Component (default Stream Injector). Status (default Unhealthy).                       | That component has that status.                                                                                                                                              |
+| HA Live                           | -                                                                                      | This instance is the live one. Also on for a BreakTime licensed as Primary that is not paired.                                                                               |
+| HA Standby                        | -                                                                                      | This instance is paired and is not the live one.                                                                                                                             |
+| HA Role Alarm                     | -                                                                                      | A standing HA role alarm is present on this instance. The Status / Message preset uses it so a role alarm still shows when the warning and HA Standby feedbacks do not fire. |
+| HA Link State                     | State: Inactive (standalone), Connecting, Connected, Degraded (default)                | The link between the pair is in that state.                                                                                                                                  |
+| HA Ready to Send                  | -                                                                                      | This instance is licensed, has an SCTE 35 PID set or the SDI Injector on, and has at least one output connected.                                                             |
+| Temporary Warning                 | Warning Type (default Event Related), or Any warning                                   | A warning of that type is showing.                                                                                                                                           |
 
 Warning types: **Event Related** (a local check refused the action and sent nothing: nothing armed, not connected, not running, invalid event, empty playlist, Start or End pressed again within half a second), **Increase Duration Not Allowed** and **Decrease Duration Not Allowed** (any duration refusal), **Action Problem** (BreakTime refused the request, accepted it with "Nothing sent from this instance", or did not confirm it), **Authentication** (HTTP 401 or 403), **Unsupported BreakTime Version** (not BreakTime 2.0, or this BreakTime version does not support the action), **Request Failed** (network error, other server error, a duration request that got no answer, or an unexpected reply), **Sent to HA Standby** (an arm or duration change sent to the standby instance), **BreakTime Warning** (a warning broadcast by BreakTime), **SCTE 104 Disconnected** and **vMix Disconnected** (a connected output disconnected). Local checks show for 2 seconds, everything else for 5.
 
@@ -295,11 +352,14 @@ These variables are numbers (or blank when there is no value): `selected_duratio
 
 ### Presets
 
-- **Event Controls**: Start Event, Start Armed Event, End Running Event, End Running (Red While On Air), End Running (Immediate), Arm Next, Arm Previous. While an event runs, the two End Running buttons turn red and show the latest running event and its time.
-- **Duration Controls**: Armed Duration +5s, Armed Duration -5s.
-- **Running**: one Running Slot N button per slot (red under 10 seconds left), Running Status.
-- **Info/Variables**: armed event name, status, duration, time and mode; SCTE 104 and vMix status; current message; running events count.
-- **Operator Panel**: see above.
+All presets are styled building blocks (see Presets above). By category:
+
+- **Simple Workflow (Fixed)**: Set Duration 0:30 / 1:00 / 1:30 / 2:00 / 3:00; Start (Armed, Idle Only); End (Latest Running); End Now (Crash Out); Status Countdown.
+- **Simple Workflow (Variable)**: Armed Duration +30s / -30s / +5s / -5s; Start (Armed, Idle Only); End (Latest Running); End Now (Crash Out); Status Countdown.
+- **Playlist Workflow**: Next Event readout; Previous Event; Next Event; Armed Duration +5s / -5s; Start (Armed); End Now (Crash Out); End All Running; Status Countdown.
+- **Info & Status**: Armed Event Name, Status, Duration, Time and Duration Mode; Running Count; Status / Message; SCTE 104 Link; vMix Link.
+
+The former per-event tiles, per-slot Running Slot buttons and Start Specific Event are no longer presets; build them by hand from the actions, feedbacks and variables (see Building other buttons).
 
 ## Troubleshooting
 

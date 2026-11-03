@@ -1,17 +1,17 @@
 /**
  * @fileoverview Feedback definitions for the BreakTime module
  *
- * Feedback callbacks read the cached state in `this.DATA`, which api.js refreshes from
+ * Feedback callbacks read the cached state in `this.DATA`, which api.ts refreshes from
  * each BreakTime state frame. `buildFeedbackState()` gives each feedback type a signature
  * of its inputs, so `checkVariables()` re-checks only the types whose inputs changed. The
  * `eventTile` feedback is checked per instance instead (`buildTileSignatures()`): each tile
  * names one event, so only the tiles whose event changed are re-checked and idle tiles
  * cost no Companion call per frame. A tile is tracked in `tileFeedbacks` only while its
  * event is in the playlist; any other tile goes in `unlistedTileFeedbacks`, which only
- * keeps a removed event's name remembered. `rebuildEventChoices()` in api.js moves the
+ * keeps a removed event's name remembered. `rebuildEventChoices()` in api.ts moves the
  * tiles of removed events across and re-checks every tile.
- * Colors, `formatClock()` and `literalButtonText()` come from defaults.js, shared with the
- * presets.
+ * Colors, `formatClock()` and `literalButtonText()` come from defaults.ts; colors and
+ * `formatClock()` are also shared with the presets.
  *
  * Stored feedback IDs are unchanged from 1.0.3; only the display names changed
  * ("Selected" is now "Armed", matching the BreakTime UI).
@@ -20,21 +20,30 @@
  * @see {@link https://github.com/bitfocus/companion-module-middleman-breaktime}
  */
 
-const { COLORS, formatClock, literalButtonText } = require('./defaults')
+import type {
+	CompanionAdvancedFeedbackResult,
+	CompanionFeedbackDefinitions,
+	CompanionInputFieldDropdown,
+	CompanionTextSize,
+} from '@companion-module/base'
+import type { BreakTimeInstanceTypes } from './main.js'
+import type BreakTimeInstance from './main.js'
+
+import { COLORS, formatClock, literalButtonText } from './defaults.js'
+
+/** What an `eventTile` shows for one event */
+export interface TileView {
+	/** Tile state; selects the colors */
+	state: 'running' | 'armed' | 'idle' | 'removed' | 'unknown'
+	/** Literal button text, or undefined to keep the button's own text */
+	text: string | undefined
+}
 
 /**
- * What an `eventTile` shows for one event
- * @typedef {Object} TileView
- * @property {'running'|'armed'|'idle'|'removed'|'unknown'} state - Tile state; selects the colors
- * @property {string|undefined} text - Literal button text, or undefined to keep the button's own text
- */
-
-/**
- * Style per `eventTile` state: red on air, amber armed, dark gray idle, muted gray with dimmed text for an event
+ * Style per `eventTile` state: red while running, amber armed, dark gray idle, muted gray with dimmed text for an event
  * no longer in the playlist, dimmed text while not connected
- * @type {Object<TileView['state'], {bgcolor: number, color: number}>}
  */
-const TILE_STYLES = {
+const TILE_STYLES: Record<TileView['state'], { bgcolor: number; color: number }> = {
 	running: { bgcolor: COLORS.RED, color: COLORS.WHITE },
 	armed: { bgcolor: COLORS.AMBER, color: COLORS.BLACK },
 	idle: { bgcolor: COLORS.DARK_GRAY, color: COLORS.WHITE },
@@ -43,37 +52,49 @@ const TILE_STYLES = {
 }
 
 /**
+ * Pinned text size for every `eventTile`, matching the tile presets' base size
+ *
+ * The feedback returns this on every state, so a tile keeps one size when it arms or goes
+ * live and gains the time line (with `'auto'` the button rescaled between a one-line name
+ * and a two-line name+clock, the "disjointed" look the operator blocks redesign removes).
+ */
+const TILE_SIZE: CompanionTextSize = '14'
+
+/**
  * Converts a variable-enabled option (already parsed by Companion) to an integer
  *
- * @private
- * @param {*} value - Option value: text, or a number from a stored button
- * @returns {number|null} The integer, or null when the value is blank or not a whole number
+ * @param value - Option value: text, or a number from a stored button
+ * @returns The integer, or null when the value is blank or not a whole number
  */
-function toInteger(value) {
+function toInteger(value: unknown): number | null {
 	const number = typeof value === 'string' && value.trim() === '' ? NaN : Number(value)
 
 	return Number.isInteger(number) ? number : null
 }
 
-module.exports = {
+export const feedbacks = {
 	/**
 	 * Registers every feedback definition with Companion
 	 *
 	 * Expensive: call at init and only again when a definition or its choices change
 	 * (the event list, see `processData`).
 	 *
-	 * @returns {void}
+	 * @returns void
 	 */
-	initFeedbacks() {
-		let self = this
-		const feedbacks = {}
+	initFeedbacks(): void {
+		const self: BreakTimeInstance = this
+		const feedbacks: CompanionFeedbackDefinitions<BreakTimeInstanceTypes['feedbacks']> = {}
 
-		const eventOption = {
+		const eventOption: CompanionInputFieldDropdown = {
 			type: 'dropdown',
 			label: 'Event',
 			id: 'event',
 			default: self.CHOICES_EVENTS[0]?.id ?? '',
 			choices: self.CHOICES_EVENTS,
+			// Keep a stored event id that is no longer in the live playlist: 2.x rejects a
+			// dropdown value not in `choices`, and `eventIsRunning`/`eventTile` already tolerate
+			// an unknown id (eventTile renders "(removed)")
+			allowCustom: true,
 		}
 
 		feedbacks.selectedIsRunning = {
@@ -84,7 +105,7 @@ module.exports = {
 				bgcolor: COLORS.RED,
 			},
 			options: [],
-			callback: async function () {
+			callback: async () => {
 				return self.DATA.selectedEvent?.Status === 1
 			},
 		}
@@ -97,7 +118,7 @@ module.exports = {
 				bgcolor: COLORS.RED,
 			},
 			options: [],
-			callback: async function () {
+			callback: async () => {
 				return self.DATA.selectedEvent?.Status === 0
 			},
 		}
@@ -116,9 +137,10 @@ module.exports = {
 					id: 'mode',
 					choices: self.CHOICES_DURATION_MODES,
 					default: self.CHOICES_DURATION_MODES[0].id,
+					tooltip: "Match when the armed event's duration mode is this: Count Up or Count Down.",
 				},
 			],
-			callback: async function (feedback) {
+			callback: async (feedback) => {
 				return (
 					self.DATA.selectedEvent?.DurationMode ===
 					Number(feedback.options.mode ?? self.CHOICES_DURATION_MODES[0].id)
@@ -136,7 +158,7 @@ module.exports = {
 				bgcolor: COLORS.GRAY,
 			},
 			options: [],
-			callback: async function () {
+			callback: async () => {
 				return self.getDurationBlock() !== ''
 			},
 		}
@@ -156,9 +178,10 @@ module.exports = {
 					id: 'seconds',
 					default: '60',
 					useVariables: true,
+					tooltip: "Seconds to compare against the armed event's duration.",
 				},
 			],
-			callback: async function (feedback) {
+			callback: async (feedback) => {
 				const seconds = toInteger(feedback.options.seconds ?? '60')
 
 				if (seconds === null || self.DATA.selectedEvent?.DurationMode !== 0) {
@@ -183,13 +206,17 @@ module.exports = {
 					id: 'target',
 					default: self.CHOICES_RUNNING_TARGETS[0].id,
 					choices: self.CHOICES_RUNNING_TARGETS,
+					disableAutoExpression: true,
+					tooltip:
+						'Which running state to check: any running event, the armed event, or a specific event chosen below.',
 				},
 				{
 					...eventOption,
 					isVisibleExpression: "$(options:target) == 'specific'",
+					tooltip: 'The event to check. Only used when Target is a specific event.',
 				},
 			],
-			callback: async function (feedback) {
+			callback: async (feedback) => {
 				const target = feedback.options.target
 
 				if (target === 'armed') {
@@ -227,9 +254,11 @@ module.exports = {
 					id: 'seconds',
 					default: '10',
 					useVariables: true,
+					tooltip:
+						"Turn on when the slot's remaining time drops below this many seconds (Count Down events only).",
 				},
 			],
-			callback: async function (feedback) {
+			callback: async (feedback) => {
 				const slot = toInteger(feedback.options.slot ?? '1')
 				const seconds = toInteger(feedback.options.seconds ?? '10')
 
@@ -239,7 +268,11 @@ module.exports = {
 
 				const event = self.DATA.slotEvents[slot - 1]
 
-				return event?.DurationMode === 0 && event.RemainingSeconds < seconds
+				return (
+					event?.DurationMode === 0 &&
+					typeof event.RemainingSeconds === 'number' &&
+					event.RemainingSeconds < seconds
+				)
 			},
 		}
 
@@ -258,9 +291,10 @@ module.exports = {
 					default: 2,
 					min: 1,
 					max: 1000,
+					tooltip: 'Turn on when at least this many events are running at once.',
 				},
 			],
-			callback: async function (feedback) {
+			callback: async (feedback) => {
 				const count = Number(feedback.options.count ?? 2)
 				const running = self.DATA.running.length
 
@@ -271,9 +305,15 @@ module.exports = {
 		feedbacks.eventTile = {
 			type: 'advanced',
 			name: 'Event Tile',
-			description: 'Shows one event: red on air with its time, amber when armed, dark gray when idle',
-			options: [eventOption],
-			callback: function (feedback) {
+			description: 'Shows one event: red while running with its time, amber when armed, dark gray when idle',
+			affectedProperties: ['text', 'bgcolor', 'color', 'size'],
+			options: [
+				{
+					...eventOption,
+					tooltip: 'The event this tile reflects: idle, armed, or running (and arms when pressed).',
+				},
+			],
+			callback: (feedback) => {
 				const eventId = typeof feedback.options.event === 'string' ? feedback.options.event : ''
 
 				// Remember which event this instance shows, so only its changes re-check it.
@@ -292,7 +332,7 @@ module.exports = {
 				}
 
 				const view = self.getEventTileView(eventId)
-				const style = { ...TILE_STYLES[view.state] }
+				const style: CompanionAdvancedFeedbackResult = { ...TILE_STYLES[view.state], size: TILE_SIZE }
 
 				if (view.text !== undefined) {
 					style.text = view.text
@@ -300,9 +340,82 @@ module.exports = {
 
 				return style
 			},
-			unsubscribe: function (feedback) {
+			unsubscribe: (feedback) => {
 				self.tileFeedbacks.delete(feedback.id)
 				self.unlistedTileFeedbacks.delete(feedback.id)
+			},
+		}
+
+		feedbacks.statusBand = {
+			type: 'advanced',
+			name: 'Status Band (Remaining Time)',
+			description:
+				'Colours a tile by the remaining time of the armed event or the latest running event: green above the yellow threshold, amber at or below it, red below the red threshold, and black while that target is stopped or counting up.',
+			affectedProperties: ['bgcolor', 'color'],
+			options: [
+				{
+					type: 'dropdown',
+					label: 'Target',
+					id: 'target',
+					default: 'armed',
+					choices: [
+						{ id: 'armed', label: 'Armed event' },
+						{ id: 'latest', label: 'Latest running event' },
+					],
+					tooltip: 'Which event the band follows: the armed event, or the latest running event.',
+				},
+				{
+					type: 'number',
+					label: 'Red below (seconds)',
+					id: 'redBelow',
+					default: 10,
+					min: 1,
+					max: 86400,
+					tooltip: 'Turn red when the remaining time drops below this many seconds.',
+				},
+				{
+					type: 'number',
+					label: 'Yellow below (seconds)',
+					id: 'yellowBelow',
+					default: 20,
+					min: 1,
+					max: 86400,
+					tooltip: 'Turn amber when the remaining time is at or below this many seconds, and not yet red.',
+				},
+			],
+			callback: (feedback) => {
+				// Black band: nothing running on this target, the running event counts up (no
+				// remaining time to pace), or its remaining time is unknown. DIM_TEXT keeps a
+				// clock value readable on the black fill without implying a live state.
+				const idle: CompanionAdvancedFeedbackResult = { bgcolor: COLORS.BLACK, color: COLORS.DIM_TEXT }
+				const event = feedback.options.target === 'latest' ? self.DATA.running[0] : self.DATA.selectedEvent
+
+				if (!event || event.Status !== 1) {
+					return idle
+				}
+
+				if (event.DurationMode !== 0) {
+					return idle
+				}
+
+				const remaining = event.RemainingSeconds
+
+				if (typeof remaining !== 'number') {
+					return idle
+				}
+
+				const redBelow = Number(feedback.options.redBelow ?? 10)
+				const yellowBelow = Number(feedback.options.yellowBelow ?? 20)
+
+				if (remaining < redBelow) {
+					return { bgcolor: COLORS.RED, color: COLORS.WHITE }
+				}
+
+				if (remaining <= yellowBelow) {
+					return { bgcolor: COLORS.AMBER, color: COLORS.BLACK }
+				}
+
+				return { bgcolor: COLORS.GREEN, color: COLORS.WHITE }
 			},
 		}
 
@@ -314,7 +427,7 @@ module.exports = {
 				bgcolor: COLORS.GREEN,
 			},
 			options: [],
-			callback: async function () {
+			callback: async () => {
 				return self.DATA.vmixStatus === 'Connected'
 			},
 		}
@@ -328,7 +441,7 @@ module.exports = {
 				bgcolor: COLORS.RED,
 			},
 			options: [],
-			callback: async function () {
+			callback: async () => {
 				return self.DATA.vmixStatus === 'Disconnected'
 			},
 		}
@@ -342,7 +455,7 @@ module.exports = {
 				bgcolor: COLORS.GREEN,
 			},
 			options: [],
-			callback: async function () {
+			callback: async () => {
 				return self.DATA.scte104Status === 'Connected'
 			},
 		}
@@ -356,7 +469,7 @@ module.exports = {
 				bgcolor: COLORS.RED,
 			},
 			options: [],
-			callback: async function () {
+			callback: async () => {
 				return self.DATA.scte104Status === 'Disconnected'
 			},
 		}
@@ -375,6 +488,7 @@ module.exports = {
 					id: 'component',
 					default: self.CHOICES_COMPONENTS[0].id,
 					choices: self.CHOICES_COMPONENTS,
+					tooltip: 'Which BreakTime component to check.',
 				},
 				{
 					type: 'dropdown',
@@ -382,10 +496,13 @@ module.exports = {
 					id: 'status',
 					default: 'Unhealthy',
 					choices: self.CHOICES_COMPONENT_STATUSES,
+					tooltip: 'The status to match for the selected component.',
 				},
 			],
-			callback: async function (feedback) {
-				const component = self.DATA.components[feedback.options.component ?? self.CHOICES_COMPONENTS[0].id]
+			callback: async (feedback) => {
+				const slug = feedback.options.component ?? self.CHOICES_COMPONENTS[0].id
+				// The component option is always a string slug; an unknown shape matches nothing
+				const component = typeof slug === 'string' ? self.DATA.components[slug] : undefined
 
 				return component?.status === (feedback.options.status ?? 'Unhealthy')
 			},
@@ -401,7 +518,7 @@ module.exports = {
 				bgcolor: COLORS.GREEN,
 			},
 			options: [],
-			callback: async function () {
+			callback: async () => {
 				return self.DATA.ha?.Acting === true
 			},
 		}
@@ -414,8 +531,32 @@ module.exports = {
 				bgcolor: COLORS.RED,
 			},
 			options: [],
-			callback: async function () {
+			callback: async () => {
 				return self.DATA.ha?.Paired === true && self.DATA.ha.Acting === false
+			},
+		}
+
+		/**
+		 * On while a standing `HARoleAlarm` is present, whatever the live/standby role
+		 *
+		 * Fires whenever `haRoleAlarm` is set (non-null and non-empty) on this instance. It covers
+		 * the gap left by `temporaryWarning` (needs an active timed warning) and `haStandby` (needs
+		 * `Paired && !Acting`): a role alarm standing on an acting or unpaired node with no timed
+		 * warning fires neither of those, which would otherwise leave the Status tile showing
+		 * `No Warnings` over a live alarm. Pairs with `$(breaktime:message)`, which already falls
+		 * back to the role-alarm text when no warning is active.
+		 */
+		feedbacks.haRoleAlarmActive = {
+			type: 'boolean',
+			name: 'HA Role Alarm',
+			defaultStyle: {
+				color: COLORS.BLACK,
+				bgcolor: COLORS.AMBER,
+			},
+			options: [],
+			callback: async () => {
+				const alarm = self.DATA.haRoleAlarm
+				return alarm !== null && alarm !== ''
 			},
 		}
 
@@ -433,9 +574,10 @@ module.exports = {
 					id: 'state',
 					default: 'Degraded',
 					choices: self.CHOICES_LINK_STATES,
+					tooltip: 'The HA peer-link state to match.',
 				},
 			],
-			callback: async function (feedback) {
+			callback: async (feedback) => {
 				return self.DATA.ha?.LinkState === (feedback.options.state ?? 'Degraded')
 			},
 		}
@@ -450,7 +592,7 @@ module.exports = {
 				bgcolor: COLORS.GREEN,
 			},
 			options: [],
-			callback: async function () {
+			callback: async () => {
 				return self.DATA.ha?.EmitReady === true
 			},
 		}
@@ -470,9 +612,10 @@ module.exports = {
 					id: 'warning',
 					choices: [...self.CHOICES_WARNINGS, self.CHOICE_ANY_WARNING],
 					default: self.CHOICES_WARNINGS[0].id,
+					tooltip: "Which temporary warning to match, or 'Any warning' to match all.",
 				},
 			],
-			callback: async function (feedback) {
+			callback: async (feedback) => {
 				if (!self.DATA.temporaryWarning) {
 					return false
 				}
@@ -491,19 +634,17 @@ module.exports = {
 	 *
 	 * Literal text, no variables, lines separated by Companion's `\n` line-break sequence.
 	 * The name goes through `literalButtonText()`, so a name containing `$(...)` or a
-	 * literal backslash-n shows as typed, not as a variable's value or a line break.
-	 * Running gives the name plus the remaining time (Count Down) or the elapsed time
-	 * (Count Up) as `m:ss`; armed and idle give the name plus the duration (the armed
-	 * event's pending Set Armed Duration target when one is held; no duration line at 0 s).
-	 * An event no longer in the playlist gives its last known name plus `(removed)`. While
-	 * not connected the tile shows only the event name (or keeps the button's own text when
-	 * the event is unknown), dimmed.
+	 * literal backslash-n shows as typed. Running gives the name plus the remaining time
+	 * (Count Down) or the elapsed time (Count Up); armed and idle give the name plus the
+	 * duration (no duration line at 0 s). An event no longer in the playlist gives its last
+	 * known name plus `(removed)`. While not connected the tile shows only the event name
+	 * (or keeps the button's own text when the event is unknown), dimmed.
 	 *
-	 * @param {string} eventId - Event ID from the tile's `event` option
-	 * @returns {TileView} State and text
+	 * @param eventId - Event ID from the tile's `event` option
+	 * @returns State and text
 	 */
-	getEventTileView(eventId) {
-		let self = this
+	getEventTileView(eventId: string): TileView {
+		const self: BreakTimeInstance = this
 
 		const DATA = self.DATA
 		const live = self.isLive()
@@ -528,11 +669,11 @@ module.exports = {
 		if (event.Status === 1) {
 			const seconds = event.DurationMode === 1 ? event.ElapsedSeconds : event.RemainingSeconds
 
-			return { state: 'running', text: `${name}\\n${formatClock(seconds)}` }
+			return { state: 'running', text: `${name}\\n${formatClock(seconds ?? NaN)}` }
 		}
 
 		const armed = DATA.selectedEvent?.ID === event.ID
-		const duration = armed ? self.getArmedDuration() : event.DurationSeconds
+		const duration = armed ? (self.getArmedDuration() ?? 0) : (event.DurationSeconds ?? 0)
 		const text = duration > 0 ? `${name}\\n${formatClock(duration)}` : name
 
 		return { state: armed ? 'armed' : 'idle', text: text }
@@ -543,16 +684,14 @@ module.exports = {
 	 *
 	 * Hot path (every state frame). Only events that some tile shows are computed, once
 	 * each. A signature is exactly what the tile would display (state and text), so it
-	 * changes only when that event's name, status, armed state or displayed second
-	 * changes. `checkVariables()` re-checks, by instance ID, only the tiles whose signature
-	 * changed.
+	 * changes only when that event's name, status, armed state or displayed second changes.
 	 *
-	 * @returns {Object<string, string>} Signature per event ID
+	 * @returns Signature per event ID
 	 */
-	buildTileSignatures() {
-		let self = this
+	buildTileSignatures(): Record<string, string> {
+		const self: BreakTimeInstance = this
 
-		const signatures = {}
+		const signatures: Record<string, string> = {}
 
 		for (const eventId of self.tileFeedbacks.values()) {
 			if (signatures[eventId] === undefined) {
@@ -569,19 +708,18 @@ module.exports = {
 	 * Returns a signature of each feedback type's inputs, for change detection
 	 *
 	 * Hot path (every state frame). A type's signature must change whenever any of its
-	 * callbacks could return something different, and should stay equal otherwise: then
-	 * `checkVariables()` re-checks only the types whose signature changed. Signatures are
-	 * primitives, compared with `!==`. Every feedback type except `eventTile` is listed
-	 * (tiles are checked per instance, see `buildTileSignatures()`); a type missing here
-	 * would only be re-checked on a full push.
+	 * callbacks could return something different, and should stay equal otherwise. Signatures
+	 * are primitives, compared with `!==`. Every feedback type except `eventTile` is listed
+	 * (tiles are checked per instance, see `buildTileSignatures()`).
 	 *
-	 * @returns {Object<string, string|number|boolean|undefined>} Signature per feedback type
+	 * @returns Signature per feedback type
 	 */
-	buildFeedbackState() {
-		let self = this
+	buildFeedbackState(): Record<string, string | number | boolean | undefined> {
+		const self: BreakTimeInstance = this
 
 		const DATA = self.DATA
 		const armed = DATA.selectedEvent
+		const latest = DATA.running[0]
 		const ha = DATA.ha
 		const warning = DATA.temporaryWarning ? DATA.temporaryWarningType : ''
 
@@ -612,6 +750,9 @@ module.exports = {
 			eventIsRunning: `${runningIds}|${armed?.Status}`,
 			runningRemainingBelow: slotTimes,
 			runningCountAtLeast: DATA.running.length,
+			// The armed event and the latest running event both feed the band; either target's
+			// run state, duration mode or remaining second changes the colour, so track all six.
+			statusBand: `${armed?.Status}|${armed?.DurationMode}|${armed?.RemainingSeconds}|${latest?.Status}|${latest?.DurationMode}|${latest?.RemainingSeconds}`,
 			vMixConnected: DATA.vmixStatus,
 			vMixDisconnected: DATA.vmixStatus,
 			scte104Connected: DATA.scte104Status,
@@ -619,9 +760,13 @@ module.exports = {
 			componentStatus: components,
 			haActing: ha?.Acting,
 			haStandby: ha?.Paired === true && ha.Acting === false,
+			haRoleAlarmActive: DATA.haRoleAlarm !== null && DATA.haRoleAlarm !== '',
 			haLinkState: ha?.LinkState,
 			haEmitReady: ha?.EmitReady,
 			temporaryWarning: warning,
 		}
 	},
-}
+} satisfies ThisType<BreakTimeInstance>
+
+/** The shape the `feedbacks` methods add to the module class */
+export type FeedbacksMixin = typeof feedbacks

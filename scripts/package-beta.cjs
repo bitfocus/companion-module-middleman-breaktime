@@ -446,6 +446,46 @@ function getBetaVersion(dir, { allowDirty = false } = {}) {
 }
 
 /**
+ * Finds the package.json of an installed dependency by resolving its entry and walking up
+ *
+ * `@companion-module/tools` v3 is ESM and no longer exposes its package.json through its
+ * `exports`, so `require.resolve('<name>/package.json')` throws. Its own entry still
+ * resolves, so this walks up from the resolved entry to the first package.json whose "name"
+ * matches, which is the package's root folder.
+ *
+ * @private
+ * @param {string} dir - Folder to resolve the dependency from
+ * @param {string} name - Package name, for example `@companion-module/tools`
+ * @returns {string} Absolute path of the package's package.json
+ * @throws {Error} When the dependency, or a package.json naming it, cannot be found
+ */
+function findPackageJson(dir, name) {
+	let current = path.dirname(require.resolve(name, { paths: [dir] }))
+
+	for (;;) {
+		const candidate = path.join(current, 'package.json')
+
+		if (fs.existsSync(candidate)) {
+			try {
+				if (JSON.parse(fs.readFileSync(candidate, 'utf8')).name === name) {
+					return candidate
+				}
+			} catch {
+				// Not valid JSON, or not the package being looked for: keep walking up
+			}
+		}
+
+		const parent = path.dirname(current)
+
+		if (parent === current) {
+			throw new Error(`could not find the package.json for ${name}`)
+		}
+
+		current = parent
+	}
+}
+
+/**
  * Finds the companion-module-build script installed with the module
  *
  * @private
@@ -455,8 +495,7 @@ function getBetaVersion(dir, { allowDirty = false } = {}) {
  */
 function findBuildTool(dir) {
 	try {
-		// eslint-disable-next-line n/no-unpublished-require -- a build script, never part of the built package
-		const toolsPackage = require.resolve('@companion-module/tools/package.json', { paths: [dir] })
+		const toolsPackage = findPackageJson(dir, '@companion-module/tools')
 		const bin = JSON.parse(fs.readFileSync(toolsPackage, 'utf8')).bin?.['companion-module-build']
 
 		if (typeof bin !== 'string') {

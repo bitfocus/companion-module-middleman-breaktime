@@ -2,46 +2,48 @@
  * @fileoverview Connection config fields shown in the Companion web UI
  *
  * The API key is a `secret-text` field, so Companion stores it in the secrets store
- * rather than the config store. Field validation here is a UI hint only: index.js
+ * rather than the config store. Field validation here is a UI hint only: main.ts
  * normalizes and clamps every value before use. Host and Port are always shown; the
  * other settings show only while Show Advanced Settings is on.
+ *
+ * The connection uses the legacy 12-column `width` grid; main.ts sets
+ * `instanceOptions.disableNewConfigLayout = true` so base 2.x keeps rendering it as the
+ * grid was designed. The two checkboxes referenced by an `isVisibleExpression`
+ * (`showAdvanced` and `verbose`) carry `disableAutoExpression: true`, which base 2.x
+ * requires for any field an `isVisibleExpression` reads.
  *
  * @module companion-module-middleman-breaktime
  * @see {@link https://github.com/bitfocus/companion-module-middleman-breaktime}
  */
 
-const { Regex } = require('@companion-module/base')
+import type { SomeCompanionConfigField } from '@companion-module/base'
+import type BreakTimeInstance from './main.js'
 
-module.exports = {
+export const configFields = {
 	/**
 	 * Returns the config field definitions for the connection settings form
 	 *
-	 * Called by Companion whenever it renders the form. `Regex.HOSTNAME` also accepts
-	 * IPv4 addresses, so host values saved by 1.0.3 stay valid. Port uses the module's own
-	 * `PORT_REGEX` (1 to 65535, leading zeros allowed) instead of `Regex.PORT`, which stops
-	 * at 65534; index.js checks the stored port with the same pattern.
+	 * Called by Companion whenever it renders the form. Host uses the module's own
+	 * `HOSTNAME_REGEX` (a hostname or IPv4 address, the pattern base's deprecated
+	 * `Regex.HOSTNAME` carried), so host values saved by 1.0.3 stay valid. Port uses the
+	 * module's own `PORT_REGEX` (1 to 65535, leading zeros allowed) instead of `Regex.PORT`,
+	 * which stops at 65534; main.ts checks the stored values with the same patterns.
 	 *
 	 * Layout on the 12-column grid, where fields flow left to right and wrap to a new row
 	 * when the next one would pass 12: Information; a divider; Host (8) and Port (4); a
-	 * second divider, so Show Advanced Settings does not sit tight under Host and Port;
-	 * Show Advanced Settings (12). With it on: API Key (12, since keys are long); Running
-	 * Event Slots (4) plus an empty static-text filler (8) with the same visibility, so no
-	 * other field joins its row; Verbose Logging (6) and Log Raw BreakTime Data (6), wide
-	 * enough that a narrow panel does not wrap the help icon under the label. Static-text
-	 * fields hold no saved value, so the dividers and the filler add nothing to the config.
+	 * second divider; Show Advanced Settings (12). With it on: API Key (12); Running Event
+	 * Slots (4) plus an empty static-text filler (8) with the same visibility, so no other
+	 * field joins its row; Verbose Logging (6) and Log Raw BreakTime Data (6).
 	 *
-	 * `showAdvanced` only drives the `isVisibleExpression` of the fields after it: the
-	 * module never reads it, and index.js leaves it out of the settings it compares, so
-	 * saving it alone keeps the connection and logs nothing. A config saved by 1.0.3 has no
-	 * `showAdvanced`; Companion evaluates the missing value as false, so those fields start
-	 * hidden. Hiding a field keeps its saved value in effect (a hidden API key stays in
-	 * use), which is also why the frame dump in api.js still checks both logging flags
-	 * although Log Raw BreakTime Data shows only while Verbose Logging is on.
+	 * `showAdvanced` only drives the `isVisibleExpression` of the fields after it: the module
+	 * never reads it, and main.ts leaves it out of the settings it compares, so saving it
+	 * alone keeps the connection and logs nothing. A config saved by 1.0.3 has no
+	 * `showAdvanced`; base evaluates the missing value as false, so those fields start hidden.
 	 *
-	 * @returns {import('@companion-module/base').SomeCompanionConfigField[]} Config field definitions
+	 * @returns Config field definitions
 	 */
-	getConfigFields() {
-		let self = this
+	getConfigFields(): SomeCompanionConfigField[] {
+		const self: BreakTimeInstance = this
 
 		return [
 			{
@@ -64,7 +66,7 @@ module.exports = {
 				label: 'Host',
 				tooltip: 'IP address or hostname of the BreakTime server',
 				width: 8,
-				regex: Regex.HOSTNAME,
+				regex: self.HOSTNAME_REGEX,
 				default: '127.0.0.1',
 			},
 			{
@@ -89,6 +91,7 @@ module.exports = {
 				label: 'Show Advanced Settings',
 				width: 12,
 				default: false,
+				disableAutoExpression: true,
 			},
 			{
 				type: 'secret-text',
@@ -127,6 +130,7 @@ module.exports = {
 					'Adds detailed lines to the log, such as each request sent to BreakTime and playlist changes. For troubleshooting only; turn it off for normal use.',
 				width: 6,
 				default: false,
+				disableAutoExpression: true,
 				isVisibleExpression: '$(options:showAdvanced)',
 			},
 			{
@@ -141,4 +145,7 @@ module.exports = {
 			},
 		]
 	},
-}
+} satisfies ThisType<BreakTimeInstance>
+
+/** The shape the `configFields` methods add to the module class */
+export type ConfigFieldsMixin = typeof configFields
