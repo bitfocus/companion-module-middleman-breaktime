@@ -42,8 +42,8 @@ import { InstanceBase, InstanceStatus } from '@companion-module/base'
 
 import type {
 	CompanionActionSchemaWithoutResult,
-	CompanionFeedbackSchema,
-	CompanionOptionValues,
+	CompanionAdvancedFeedbackSchema,
+	CompanionBooleanFeedbackSchema,
 	CompanionVariableValue,
 	CompanionVariableValues,
 	InstanceTypes,
@@ -127,12 +127,73 @@ export type Secrets = JsonObject & {
 	apiKey?: string
 }
 
-/** The generic manifest for InstanceBase: the module's config, secrets and loosely-typed entity sets */
+/**
+ * Option value shape of each action, keyed by action id
+ *
+ * Typed against the option fields registered in `actions.ts`, so a misspelt `actionId` or option id in
+ * a preset is a compile error instead of a runtime surprise. Dropdown values are the stored
+ * `string | number`; `endSelected.event` is optional because it is only meaningful when Target is a
+ * specific event (the latest/all presets omit it). The handlers' `?? default` fallbacks still cover an
+ * option missing from a button saved before it existed.
+ */
+export type ActionsSchema = {
+	startSelected: CompanionActionSchemaWithoutResult<{
+		event: string | number
+		immediate: boolean
+		onlyWhenIdle: boolean
+	}>
+	startArmed: CompanionActionSchemaWithoutResult<{ immediate: boolean }>
+	endSelected: CompanionActionSchemaWithoutResult<{
+		target: string | number
+		event?: string | number
+		immediate: boolean
+	}>
+	selectNextEvent: CompanionActionSchemaWithoutResult<Record<string, never>>
+	selectPreviousEvent: CompanionActionSchemaWithoutResult<Record<string, never>>
+	selectEvent: CompanionActionSchemaWithoutResult<{ event: string | number }>
+	increaseDuration: CompanionActionSchemaWithoutResult<{ duration: number }>
+	decreaseDuration: CompanionActionSchemaWithoutResult<{ duration: number }>
+	setArmedDuration: CompanionActionSchemaWithoutResult<{ seconds: number }>
+}
+
+/**
+ * Option value shape and kind of each feedback, keyed by feedback id
+ *
+ * As {@link ActionsSchema}, but for feedbacks, and it also carries each feedback's `type`, so a
+ * preset boolean-feedback entry is required to provide a `style`. `eventTile` is the one advanced
+ * feedback; every other feedback is boolean.
+ */
+export type FeedbacksSchema = {
+	selectedIsRunning: CompanionBooleanFeedbackSchema<Record<string, never>>
+	selectedisFinished: CompanionBooleanFeedbackSchema<Record<string, never>>
+	selectedDurationMode: CompanionBooleanFeedbackSchema<{ mode: string | number }>
+	IncDecNotAllowed: CompanionBooleanFeedbackSchema<Record<string, never>>
+	armedDurationIs: CompanionBooleanFeedbackSchema<{ seconds: number }>
+	eventIsRunning: CompanionBooleanFeedbackSchema<{ target: string | number; event: string | number }>
+	runningRemainingBelow: CompanionBooleanFeedbackSchema<{ slot: number; seconds: number }>
+	runningCountAtLeast: CompanionBooleanFeedbackSchema<{ count: number }>
+	eventTile: CompanionAdvancedFeedbackSchema<{ event: string | number }>
+	countingDown: CompanionBooleanFeedbackSchema<{ target: string | number }>
+	remainingTimeBelow: CompanionBooleanFeedbackSchema<{ target: string | number; seconds: number }>
+	vMixConnected: CompanionBooleanFeedbackSchema<Record<string, never>>
+	vMixDisconnected: CompanionBooleanFeedbackSchema<Record<string, never>>
+	scte104Connected: CompanionBooleanFeedbackSchema<Record<string, never>>
+	scte104Disconnected: CompanionBooleanFeedbackSchema<Record<string, never>>
+	componentStatus: CompanionBooleanFeedbackSchema<{ component: string | number; status: string | number }>
+	haActing: CompanionBooleanFeedbackSchema<Record<string, never>>
+	haStandby: CompanionBooleanFeedbackSchema<Record<string, never>>
+	haRoleAlarmActive: CompanionBooleanFeedbackSchema<Record<string, never>>
+	haLinkState: CompanionBooleanFeedbackSchema<{ state: string | number }>
+	haEmitReady: CompanionBooleanFeedbackSchema<Record<string, never>>
+	temporaryWarning: CompanionBooleanFeedbackSchema<{ warning: string | number }>
+}
+
+/** The generic manifest for InstanceBase: the module's config, secrets and typed entity sets */
 export interface BreakTimeInstanceTypes extends InstanceTypes {
 	config: Config
 	secrets: Secrets
-	actions: Record<string, CompanionActionSchemaWithoutResult<CompanionOptionValues>>
-	feedbacks: Record<string, CompanionFeedbackSchema<CompanionOptionValues>>
+	actions: ActionsSchema
+	feedbacks: FeedbacksSchema
 	variables: CompanionVariableValues
 }
 
@@ -249,10 +310,13 @@ export class BreakTimeInstance extends InstanceBase<BreakTimeInstanceTypes> {
 	pendingDuration: PendingDuration | null = null
 
 	/**
-	 * Time (`performance.now()`, ms) of the last Start and the last End press that sent a request, null when its
-	 * debounce window is released; a further press of the same group within PRESS_DEBOUNCE_MS is ignored
+	 * Time (`performance.now()`, ms) of the last Start or End press that sent a request, keyed by press target
+	 * (e.g. `start:armed`, `start:<eventId>`, `end:latest`, `end:all`, `end:specific:<eventId>`). A further press
+	 * of the same target within PRESS_DEBOUNCE_MS is ignored; a press of a different target is not, so a button
+	 * with two differently-targeted Start (or End) actions no longer drops the second. Cleared when the connection
+	 * is lost and when the host or port changes.
 	 */
-	pressSentAt: { start: number | null; end: number | null } = { start: null, end: null }
+	pressSentAt = new Map<string, number>()
 
 	/** Names of conditions already logged, so a repeating condition logs once until it clears */
 	logLatches = new Set<string>()
@@ -287,9 +351,6 @@ export class BreakTimeInstance extends InstanceBase<BreakTimeInstanceTypes> {
 			...defaults,
 			...api,
 		})
-
-		// Keep the hand-built 12-column config grid; base 2.x's automatic layout ignores widths
-		this.instanceOptions.disableNewConfigLayout = true
 	}
 
 	/**

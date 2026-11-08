@@ -31,9 +31,11 @@ export const actions = {
 	initActions(): void {
 		const self: BreakTimeInstance = this
 
-		const actions: CompanionActionDefinitions<BreakTimeInstanceTypes['actions']> = {}
+		// The precise actions manifest makes every entry's keys required, so start from an asserted
+		// empty object and populate it below (one entry per action id).
+		const actions = {} as CompanionActionDefinitions<BreakTimeInstanceTypes['actions']>
 
-		const immediateOption: CompanionInputFieldCheckbox = {
+		const immediateOption: CompanionInputFieldCheckbox<'immediate'> = {
 			type: 'checkbox',
 			label: 'Immediate',
 			id: 'immediate',
@@ -66,16 +68,16 @@ export const actions = {
 						'Only start when nothing is already running. Stops this button starting a second event while one is already running.',
 				},
 			],
-			callback: async (action) => {
-				await self.startSelected(action.options)
+			callback: async (action, context) => {
+				await self.startSelected(action.options, context.signal)
 			},
 		}
 
 		actions.startArmed = {
 			name: 'Start Armed Event',
 			options: [immediateOption],
-			callback: async (action) => {
-				await self.startArmed(action.options)
+			callback: async (action, context) => {
+				await self.startArmed(action.options, context.signal)
 			},
 		}
 
@@ -106,24 +108,24 @@ export const actions = {
 				},
 				immediateOption,
 			],
-			callback: async (action) => {
-				await self.endSelected(action.options)
+			callback: async (action, context) => {
+				await self.endSelected(action.options, context.signal)
 			},
 		}
 
 		actions.selectNextEvent = {
 			name: 'Arm Next',
 			options: [],
-			callback: async () => {
-				await self.selectNextEvent()
+			callback: async (_action, context) => {
+				await self.selectNextEvent(context.signal)
 			},
 		}
 
 		actions.selectPreviousEvent = {
 			name: 'Arm Previous',
 			options: [],
-			callback: async () => {
-				await self.selectPreviousEvent()
+			callback: async (_action, context) => {
+				await self.selectPreviousEvent(context.signal)
 			},
 		}
 
@@ -143,8 +145,8 @@ export const actions = {
 						'The event to arm. The armed event is what Start Armed Event fires and what the armed readouts show.',
 				},
 			],
-			callback: async (action) => {
-				await self.selectEvent(action.options)
+			callback: async (action, context) => {
+				await self.selectEvent(action.options, context.signal)
 			},
 		}
 
@@ -152,16 +154,21 @@ export const actions = {
 			name: 'Armed Duration +',
 			options: [
 				{
-					type: 'textinput',
+					type: 'number',
 					label: 'Seconds',
 					id: 'duration',
-					default: '5',
-					useVariables: true,
+					default: 5,
+					min: 1,
+					max: self.DURATION_STEP_MAX_S,
+					asInteger: true,
+					// Pass an out-of-range/non-integer expression value through to the handler's own
+					// validate-and-warn path instead of letting base silently skip the action
+					allowInvalidValues: true,
 					tooltip: `Whole seconds to add, 1 to ${self.DURATION_STEP_MAX_S}`,
 				},
 			],
-			callback: async (action) => {
-				await self.increaseDuration(action.options)
+			callback: async (action, context) => {
+				await self.increaseDuration(action.options, context.signal)
 			},
 		}
 
@@ -169,16 +176,21 @@ export const actions = {
 			name: 'Armed Duration -',
 			options: [
 				{
-					type: 'textinput',
+					type: 'number',
 					label: 'Seconds',
 					id: 'duration',
-					default: '5',
-					useVariables: true,
+					default: 5,
+					min: 1,
+					max: self.DURATION_STEP_MAX_S,
+					asInteger: true,
+					// Pass an out-of-range/non-integer expression value through to the handler's own
+					// validate-and-warn path instead of letting base silently skip the action
+					allowInvalidValues: true,
 					tooltip: `Whole seconds to subtract, 1 to ${self.DURATION_STEP_MAX_S}`,
 				},
 			],
-			callback: async (action) => {
-				await self.decreaseDuration(action.options)
+			callback: async (action, context) => {
+				await self.decreaseDuration(action.options, context.signal)
 			},
 		}
 
@@ -186,16 +198,21 @@ export const actions = {
 			name: 'Set Armed Duration',
 			options: [
 				{
-					type: 'textinput',
+					type: 'number',
 					label: 'Seconds',
 					id: 'seconds',
-					default: '60',
-					useVariables: true,
+					default: 60,
+					min: self.DURATION_MIN_S,
+					max: self.DURATION_MAX_TIME_SIGNAL_S,
+					asInteger: true,
+					// A single field max cannot express the mode-specific limit (6553 Splice / 65535 Time
+					// Signal), so pass the value through to setArmedDuration's own validation and warning
+					allowInvalidValues: true,
 					tooltip: `Whole seconds: ${self.DURATION_MIN_S} to ${self.DURATION_MAX_SPLICE_S} (Splice Insert) or ${self.DURATION_MIN_S} to ${self.DURATION_MAX_TIME_SIGNAL_S} (Time Signal)`,
 				},
 			],
-			callback: async (action) => {
-				await self.setArmedDuration(action.options)
+			callback: async (action, context) => {
+				await self.setArmedDuration(action.options, context.signal)
 			},
 		}
 

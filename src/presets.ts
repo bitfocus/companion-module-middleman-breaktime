@@ -8,8 +8,8 @@
  * action is not allowed or a readout is stopped), an explicit pinned `size` per role so
  * same-role buttons match (`'auto'` only on the variable-length name and message lines), and a
  * static `png64` glyph per transport/arm/nudge block (drawn `center:top` with its word label
- * `center:bottom`). The status countdown tiles pin their own size so the `statusBand` feedback,
- * which recolours bgcolor and text only, never resizes them.
+ * `center:bottom`). The status countdown tiles pin their own size, and their `countingDown` /
+ * `remainingTimeBelow` boolean feedbacks recolour bgcolor and text only, so the tiles never resize.
  *
  * Four workflow categories (base 2.x preset sections):
  * - Simple Workflow (Fixed): a 0:30 to 3:00 Set Duration keypad, then START, END, END NOW and a
@@ -35,10 +35,13 @@ import type {
 	CompanionButtonStyleProps,
 	CompanionOptionValues,
 	CompanionPresetDefinitions,
+	CompanionPresetOptionValues,
 	CompanionPresetSection,
 	CompanionSimplePresetDefinition,
 	CompanionTextSize,
+	SomePresetActionEntry,
 	SomePresetSimpleFeedbackEntry,
+	StringKeys,
 } from '@companion-module/base'
 import type { BreakTimeInstanceTypes } from './main.js'
 import type BreakTimeInstance from './main.js'
@@ -83,8 +86,8 @@ const SIZE_DURATION: CompanionTextSize = '18'
 /**
  * Pinned text size for the status countdown tiles (a single mm:ss clock, no glyph)
  *
- * Pinned so the `statusBand` feedback — which only recolours bgcolor and text — never resizes the
- * tile as it bands from green through amber to red.
+ * Pinned so the `countingDown` and `remainingTimeBelow` boolean feedbacks — which only recolour
+ * bgcolor and text — never resize the tile as it bands from green through amber to red.
  */
 const SIZE_STATUS: CompanionTextSize = '18'
 
@@ -111,11 +114,12 @@ function buttonStyle(text: string, size: CompanionTextSize = SIZE_BLOCK): Compan
 }
 
 /**
- * Returns a status-tile style: white text on a black fill
+ * Returns a status-tile base style: dimmed text on a black fill
  *
- * The base of a status countdown tile. The `statusBand` feedback overrides bgcolor and text
- * colour per band and leaves black (with dimmed text) while the target is stopped or counting up,
- * which matches this base, so the tile reads as a single countdown across every state.
+ * The base of a status countdown tile, shown while the tracked event is stopped or counting up (its
+ * idle appearance). The `countingDown` and `remainingTimeBelow` boolean feedbacks layer over it,
+ * recolouring the tile to green, then amber, then red as the time runs down; none sets a size, so the
+ * tile keeps this pinned size across every state.
  *
  * @param text - Button text; a clock variable
  * @param size - Pinned text size
@@ -125,7 +129,7 @@ function blackStyle(text: string, size: CompanionTextSize): CompanionButtonStyle
 	return {
 		text: text,
 		size: size,
-		color: COLORS.WHITE,
+		color: COLORS.DIM_TEXT,
 		bgcolor: COLORS.BLACK,
 	}
 }
@@ -161,6 +165,10 @@ function glyphStyle(
 /**
  * Returns a `simple` button preset whose press runs one action
  *
+ * The typed overloads validate the action against the module's action manifest: a display-only preset
+ * passes `null` and no options, and an action preset's `actionId` and `options` are checked against
+ * that action's schema, so a misspelt id or option is a compile error.
+ *
  * @param name - Preset name
  * @param style - Button style
  * @param actionId - Action run on press, or null for a display-only button
@@ -169,6 +177,22 @@ function glyphStyle(
  * @param notes - Optional operator notes, copied onto the button's Notes field when the preset is dropped
  * @returns Preset
  */
+function buttonPreset(
+	name: string,
+	style: CompanionButtonStyleProps,
+	actionId: null,
+	options: Record<string, never>,
+	feedbacks: SomePresetSimpleFeedbackEntry<BreakTimeInstanceTypes>[],
+	notes?: string,
+): CompanionSimplePresetDefinition<BreakTimeInstanceTypes>
+function buttonPreset<K extends StringKeys<BreakTimeInstanceTypes['actions']>>(
+	name: string,
+	style: CompanionButtonStyleProps,
+	actionId: K,
+	options: CompanionPresetOptionValues<BreakTimeInstanceTypes['actions'][K]['options']>,
+	feedbacks: SomePresetSimpleFeedbackEntry<BreakTimeInstanceTypes>[],
+	notes?: string,
+): CompanionSimplePresetDefinition<BreakTimeInstanceTypes>
 function buttonPreset(
 	name: string,
 	style: CompanionButtonStyleProps,
@@ -181,7 +205,18 @@ function buttonPreset(
 		type: 'simple',
 		name: name,
 		style: style,
-		steps: actionId ? [{ down: [{ actionId: actionId, options: options }], up: [] }] : [],
+		// actionId/options are validated by the typed overloads above; the implementation stays loose,
+		// so the single-action step is asserted to the precise preset-action entry type here.
+		steps: actionId
+			? [
+					{
+						down: [
+							{ actionId: actionId, options: options } as SomePresetActionEntry<BreakTimeInstanceTypes>,
+						],
+						up: [],
+					},
+				]
+			: [],
 		feedbacks: feedbacks,
 	}
 
@@ -209,11 +244,11 @@ function setDurationPreset(seconds: number): CompanionSimplePresetDefinition<Bre
 		`Set Duration ${label}`,
 		buttonStyle(label, SIZE_DURATION),
 		'setArmedDuration',
-		{ seconds: String(seconds) },
+		{ seconds: seconds },
 		[
 			{
 				feedbackId: 'armedDurationIs',
-				options: { seconds: String(seconds) },
+				options: { seconds: seconds },
 				style: { bgcolor: COLORS.GREEN, color: COLORS.BLACK },
 			},
 			{ feedbackId: 'IncDecNotAllowed', options: {}, style: { color: COLORS.DIM_TEXT } },
@@ -235,7 +270,7 @@ function increaseNudgePreset(seconds: number): CompanionSimplePresetDefinition<B
 		`Armed Duration +${seconds}s`,
 		glyphStyle(`+${seconds}s`, PLUS_PNG64),
 		'increaseDuration',
-		{ duration: String(seconds) },
+		{ duration: seconds },
 		[{ feedbackId: 'IncDecNotAllowed', options: {}, style: { color: COLORS.DIM_TEXT } }],
 		`Adds ${seconds} seconds to the armed event's duration. Works only while the armed event is a stopped Count Down event.`,
 	)
@@ -252,7 +287,7 @@ function decreaseNudgePreset(seconds: number): CompanionSimplePresetDefinition<B
 		`Armed Duration -${seconds}s`,
 		glyphStyle(`-${seconds}s`, MINUS_PNG64),
 		'decreaseDuration',
-		{ duration: String(seconds) },
+		{ duration: seconds },
 		[{ feedbackId: 'IncDecNotAllowed', options: {}, style: { color: COLORS.DIM_TEXT } }],
 		`Takes ${seconds} seconds off the armed event's duration. Works only while the armed event is a stopped Count Down event.`,
 	)
@@ -288,20 +323,24 @@ function simpleStartPreset(firstEventId: string): CompanionSimplePresetDefinitio
 /**
  * Returns the graceful END preset (latest running event)
  *
- * Stop block that ends the latest running event with pre-roll and correction. Red while the armed
- * event runs (`selectedIsRunning`), dimmed while it is stopped (`selectedisFinished`).
+ * Stop block that ends the latest running event with pre-roll and correction. Red while any event
+ * is running (`runningCountAtLeast` 1), dimmed text while nothing is running — the action ends the
+ * latest running event, so the colour follows the running count, mirroring `Playlist_EndAll`.
  *
  * @returns Preset
  */
 function endLatestPreset(): CompanionSimplePresetDefinition<BreakTimeInstanceTypes> {
 	return buttonPreset(
 		'End (Latest Running)',
-		glyphStyle('END', STOP_PNG64),
+		glyphStyle('END', STOP_PNG64, { color: COLORS.DIM_TEXT }),
 		'endSelected',
 		{ target: 'latest', immediate: false },
 		[
-			{ feedbackId: 'selectedisFinished', options: {}, style: { color: COLORS.DIM_TEXT } },
-			{ feedbackId: 'selectedIsRunning', options: {}, style: { bgcolor: COLORS.RED, color: COLORS.WHITE } },
+			{
+				feedbackId: 'runningCountAtLeast',
+				options: { count: 1 },
+				style: { bgcolor: COLORS.RED, color: COLORS.WHITE },
+			},
 		],
 		'Ends the latest running event cleanly, with pre-roll and correction. Turns red while an event is running, and dims while nothing is running.',
 	)
@@ -311,19 +350,23 @@ function endLatestPreset(): CompanionSimplePresetDefinition<BreakTimeInstanceTyp
  * Returns the crash-out END NOW preset (latest running event)
  *
  * Lightning-bolt block that ends the latest running event immediately, no pre-roll or correction.
- * Same state colours as END; the bolt marks the instant crash-out.
+ * Same state colours as END: red while any event is running (`runningCountAtLeast` 1), dimmed text
+ * while nothing is running; the bolt marks the instant crash-out.
  *
  * @returns Preset
  */
 function endNowLatestPreset(): CompanionSimplePresetDefinition<BreakTimeInstanceTypes> {
 	return buttonPreset(
 		'End Now (Crash Out)',
-		glyphStyle('END\\nNOW', BOLT_PNG64),
+		glyphStyle('END\\nNOW', BOLT_PNG64, { color: COLORS.DIM_TEXT }),
 		'endSelected',
 		{ target: 'latest', immediate: true },
 		[
-			{ feedbackId: 'selectedisFinished', options: {}, style: { color: COLORS.DIM_TEXT } },
-			{ feedbackId: 'selectedIsRunning', options: {}, style: { bgcolor: COLORS.RED, color: COLORS.WHITE } },
+			{
+				feedbackId: 'runningCountAtLeast',
+				options: { count: 1 },
+				style: { bgcolor: COLORS.RED, color: COLORS.WHITE },
+			},
 		],
 		'Ends the latest running event immediately, with no pre-roll or correction. Use it only when you need the event to stop right now. Time Signal events have no crash-out.',
 	)
@@ -332,8 +375,9 @@ function endNowLatestPreset(): CompanionSimplePresetDefinition<BreakTimeInstance
 /**
  * Returns the armed-event status countdown tile shared by the two Simple categories
  *
- * Black-based mm:ss clock of the armed event's remaining time, banded green/amber/red by
- * `statusBand` (target armed) and left black while the armed event is stopped or counting up.
+ * Black-based mm:ss clock of the armed event's remaining time. Layered boolean feedbacks band it green
+ * (`countingDown`), then amber then red (`remainingTimeBelow` at 20 s and 10 s, red listed last so it
+ * wins), and leave it black while the armed event is stopped or counting up.
  *
  * @returns Preset
  */
@@ -343,7 +387,23 @@ function armedStatusTile(): CompanionSimplePresetDefinition<BreakTimeInstanceTyp
 		blackStyle('$(breaktime:selected_time_mmss)', SIZE_STATUS),
 		null,
 		{},
-		[{ feedbackId: 'statusBand', options: { target: 'armed', redBelow: 10, yellowBelow: 20 } }],
+		[
+			{
+				feedbackId: 'countingDown',
+				options: { target: 'armed' },
+				style: { bgcolor: COLORS.GREEN, color: COLORS.WHITE },
+			},
+			{
+				feedbackId: 'remainingTimeBelow',
+				options: { target: 'armed', seconds: 20 },
+				style: { bgcolor: COLORS.AMBER, color: COLORS.BLACK },
+			},
+			{
+				feedbackId: 'remainingTimeBelow',
+				options: { target: 'armed', seconds: 10 },
+				style: { bgcolor: COLORS.RED, color: COLORS.WHITE },
+			},
+		],
 		"Shows the armed event's remaining time. Turns green, then amber, then red as the time runs down, and stays black while the armed event is stopped or counting up. Display only.",
 	)
 }
@@ -566,7 +626,23 @@ export const presets = {
 				blackStyle('$(breaktime:running_latest_time_mmss)', SIZE_STATUS),
 				null,
 				{},
-				[{ feedbackId: 'statusBand', options: { target: 'latest', redBelow: 10, yellowBelow: 20 } }],
+				[
+					{
+						feedbackId: 'countingDown',
+						options: { target: 'latest' },
+						style: { bgcolor: COLORS.GREEN, color: COLORS.WHITE },
+					},
+					{
+						feedbackId: 'remainingTimeBelow',
+						options: { target: 'latest', seconds: 20 },
+						style: { bgcolor: COLORS.AMBER, color: COLORS.BLACK },
+					},
+					{
+						feedbackId: 'remainingTimeBelow',
+						options: { target: 'latest', seconds: 10 },
+						style: { bgcolor: COLORS.RED, color: COLORS.WHITE },
+					},
+				],
 				"Shows the latest running event's remaining time. Turns green, then amber, then red as the time runs down, and stays black while nothing is running, or the latest event is counting up. Display only.",
 			),
 		)

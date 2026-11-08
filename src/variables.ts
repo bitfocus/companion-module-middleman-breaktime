@@ -274,8 +274,10 @@ export const variables = {
 			}
 
 			if (changedTypes !== null) {
-				// changedTypes is non-empty here; checkFeedbacks requires at least one type
-				self.checkFeedbacks(...(changedTypes as [string, ...string[]]))
+				// changedTypes holds feedback type ids (keys of buildFeedbackState) and is non-empty here;
+				// checkFeedbacks requires at least one typed feedback id.
+				type FeedbackTypeId = keyof BreakTimeInstanceTypes['feedbacks']
+				self.checkFeedbacks(...(changedTypes as [FeedbackTypeId, ...FeedbackTypeId[]]))
 			}
 
 			if (changedTiles !== null) {

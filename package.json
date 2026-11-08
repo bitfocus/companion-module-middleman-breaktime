@@ -1,20 +1,24 @@
 {
 	"name": "middleman-breaktime",
-	"version": "2.0.1",
+	"version": "2.0.2",
 	"type": "module",
 	"main": "dist/main.js",
 	"scripts": {
-		"test": "echo \"Error: no test specified\" && exit 1",
+		"postinstall": "husky",
 		"format": "prettier -w .",
-		"lint": "eslint .",
 		"typecheck": "tsc --noEmit",
-		"build": "tsc",
-		"package": "yarn build && companion-module-build",
+		"build": "rimraf dist && run build:main",
+		"build:main": "tsc -p tsconfig.build.json",
+		"dev": "tsc -p tsconfig.build.json --watch",
+		"lint:raw": "eslint",
+		"lint": "run lint:raw .",
+		"package": "run build && companion-module-build",
 		"package:beta": "yarn build && node scripts/package-beta.cjs"
 	},
 	"license": "MIT",
 	"engines": {
-		"node": "^22.20 || ^26.5"
+		"node": "^26",
+		"yarn": "^4"
 	},
 	"packageManager": "yarn@4.18.1",
 	"dependencies": {
@@ -27,12 +31,23 @@
 	},
 	"devDependencies": {
 		"@companion-module/tools": "^3.2.0",
-		"@types/node": "^22.20.0",
+		"@types/node": "^26.6.4",
 		"@types/ws": "^8.18.2",
 		"eslint": "^10",
+		"husky": "^9.1.7",
+		"lint-staged": "^17.6.0",
 		"prettier": "^3.2.5",
+		"rimraf": "^6.1.3",
 		"typescript": "~6.0.3",
 		"typescript-eslint": "^8.56.1"
 	},
-	"prettier": "@companion-module/tools/.prettierrc.json"
+	"prettier": "@companion-module/tools/.prettierrc.json",
+	"lint-staged": {
+		"*.{css,json,md,scss}": [
+			"prettier --write"
+		],
+		"*.{ts,tsx,js,jsx}": [
+			"yarn lint:raw --fix"
+		]
+	}
 }

@@ -83,9 +83,11 @@ export const feedbacks = {
 	 */
 	initFeedbacks(): void {
 		const self: BreakTimeInstance = this
-		const feedbacks: CompanionFeedbackDefinitions<BreakTimeInstanceTypes['feedbacks']> = {}
+		// The precise feedbacks manifest makes every entry's keys required, so start from an asserted
+		// empty object and populate it below (one entry per feedback id).
+		const feedbacks = {} as CompanionFeedbackDefinitions<BreakTimeInstanceTypes['feedbacks']>
 
-		const eventOption: CompanionInputFieldDropdown = {
+		const eventOption: CompanionInputFieldDropdown<'event'> = {
 			type: 'dropdown',
 			label: 'Event',
 			id: 'event',
@@ -95,6 +97,19 @@ export const feedbacks = {
 			// dropdown value not in `choices`, and `eventIsRunning`/`eventTile` already tolerate
 			// an unknown id (eventTile renders "(removed)")
 			allowCustom: true,
+		}
+
+		// Shared Target dropdown for the two status countdown booleans; spread per use (never mutated)
+		// so each can add its own tooltip.
+		const bandTargetOption: CompanionInputFieldDropdown<'target'> = {
+			type: 'dropdown',
+			label: 'Target',
+			id: 'target',
+			default: 'armed',
+			choices: [
+				{ id: 'armed', label: 'Armed event' },
+				{ id: 'latest', label: 'Latest running event' },
+			],
 		}
 
 		feedbacks.selectedIsRunning = {
@@ -173,16 +188,21 @@ export const feedbacks = {
 			},
 			options: [
 				{
-					type: 'textinput',
+					type: 'number',
 					label: 'Seconds',
 					id: 'seconds',
-					default: '60',
-					useVariables: true,
+					default: 60,
+					min: 1,
+					max: self.DURATION_MAX_TIME_SIGNAL_S,
+					asInteger: true,
+					// Let an out-of-range/non-integer expression value reach the guarded callback (which
+					// returns false) rather than base silently skipping the feedback
+					allowInvalidValues: true,
 					tooltip: "Seconds to compare against the armed event's duration.",
 				},
 			],
 			callback: async (feedback) => {
-				const seconds = toInteger(feedback.options.seconds ?? '60')
+				const seconds = toInteger(feedback.options.seconds ?? 60)
 
 				if (seconds === null || self.DATA.selectedEvent?.DurationMode !== 0) {
 					return false
@@ -241,26 +261,36 @@ export const feedbacks = {
 			},
 			options: [
 				{
-					type: 'textinput',
+					type: 'number',
 					label: 'Slot',
 					id: 'slot',
-					default: '1',
-					useVariables: true,
+					default: 1,
+					min: 1,
+					max: self.MAX_RUNNING_SLOTS,
+					asInteger: true,
+					// Let an out-of-range/non-integer expression value reach the guarded callback (which
+					// returns false) rather than base silently skipping the feedback
+					allowInvalidValues: true,
 					tooltip: `1 to ${self.MAX_RUNNING_SLOTS}. An event keeps its slot until it ends.`,
 				},
 				{
-					type: 'textinput',
+					type: 'number',
 					label: 'Seconds',
 					id: 'seconds',
-					default: '10',
-					useVariables: true,
+					default: 10,
+					min: 0,
+					max: self.DURATION_MAX_TIME_SIGNAL_S,
+					asInteger: true,
+					// Let an out-of-range/non-integer expression value reach the guarded callback (which
+					// returns false) rather than base silently skipping the feedback
+					allowInvalidValues: true,
 					tooltip:
 						"Turn on when the slot's remaining time drops below this many seconds (Count Down events only).",
 				},
 			],
 			callback: async (feedback) => {
-				const slot = toInteger(feedback.options.slot ?? '1')
-				const seconds = toInteger(feedback.options.seconds ?? '10')
+				const slot = toInteger(feedback.options.slot ?? 1)
+				const seconds = toInteger(feedback.options.seconds ?? 10)
 
 				if (slot === null || slot < 1 || slot > self.MAX_RUNNING_SLOTS || seconds === null || seconds < 0) {
 					return false
@@ -346,76 +376,79 @@ export const feedbacks = {
 			},
 		}
 
-		feedbacks.statusBand = {
-			type: 'advanced',
-			name: 'Status Band (Remaining Time)',
+		feedbacks.countingDown = {
+			type: 'boolean',
+			name: 'Counting Down',
 			description:
-				'Colours a tile by the remaining time of the armed event or the latest running event: green above the yellow threshold, amber at or below it, red below the red threshold, and black while that target is stopped or counting up.',
-			affectedProperties: ['bgcolor', 'color'],
+				'On when the target event is running, counting down, and has a known time remaining. The green base of a status countdown tile.',
+			defaultStyle: {
+				color: COLORS.WHITE,
+				bgcolor: COLORS.GREEN,
+			},
 			options: [
 				{
-					type: 'dropdown',
-					label: 'Target',
-					id: 'target',
-					default: 'armed',
-					choices: [
-						{ id: 'armed', label: 'Armed event' },
-						{ id: 'latest', label: 'Latest running event' },
-					],
-					tooltip: 'Which event the band follows: the armed event, or the latest running event.',
-				},
-				{
-					type: 'number',
-					label: 'Red below (seconds)',
-					id: 'redBelow',
-					default: 10,
-					min: 1,
-					max: 86400,
-					tooltip: 'Turn red when the remaining time drops below this many seconds.',
-				},
-				{
-					type: 'number',
-					label: 'Yellow below (seconds)',
-					id: 'yellowBelow',
-					default: 20,
-					min: 1,
-					max: 86400,
-					tooltip: 'Turn amber when the remaining time is at or below this many seconds, and not yet red.',
+					...bandTargetOption,
+					tooltip: 'Which event to follow: the armed event, or the latest running event.',
 				},
 			],
-			callback: (feedback) => {
-				// Black band: nothing running on this target, the running event counts up (no
-				// remaining time to pace), or its remaining time is unknown. DIM_TEXT keeps a
-				// clock value readable on the black fill without implying a live state.
-				const idle: CompanionAdvancedFeedbackResult = { bgcolor: COLORS.BLACK, color: COLORS.DIM_TEXT }
+			callback: async (feedback) => {
 				const event = feedback.options.target === 'latest' ? self.DATA.running[0] : self.DATA.selectedEvent
 
-				if (!event || event.Status !== 1) {
-					return idle
+				// Not counting down: nothing running on this target, it counts up (no remaining time to
+				// pace), or its remaining time is unknown.
+				if (!event || event.Status !== 1 || event.DurationMode !== 0) {
+					return false
 				}
 
-				if (event.DurationMode !== 0) {
-					return idle
+				return typeof event.RemainingSeconds === 'number'
+			},
+		}
+
+		feedbacks.remainingTimeBelow = {
+			type: 'boolean',
+			name: 'Remaining Time Below',
+			description: 'On when the target event is counting down and its time remaining is below the given seconds.',
+			defaultStyle: {
+				color: COLORS.WHITE,
+				bgcolor: COLORS.RED,
+			},
+			options: [
+				{
+					...bandTargetOption,
+					tooltip: 'Which event to follow: the armed event, or the latest running event.',
+				},
+				{
+					type: 'number',
+					label: 'Seconds',
+					id: 'seconds',
+					default: 20,
+					min: 1,
+					max: self.DURATION_MAX_TIME_SIGNAL_S,
+					asInteger: true,
+					// Let an out-of-range/non-integer expression value reach the guarded callback (which
+					// returns false) rather than base silently skipping the feedback
+					allowInvalidValues: true,
+					tooltip:
+						"Turn on when the target's remaining time drops below this many seconds (Count Down events only).",
+				},
+			],
+			callback: async (feedback) => {
+				const seconds = toInteger(feedback.options.seconds ?? 20)
+
+				if (seconds === null) {
+					return false
+				}
+
+				const event = feedback.options.target === 'latest' ? self.DATA.running[0] : self.DATA.selectedEvent
+
+				if (!event || event.Status !== 1 || event.DurationMode !== 0) {
+					return false
 				}
 
 				const remaining = event.RemainingSeconds
 
-				if (typeof remaining !== 'number') {
-					return idle
-				}
-
-				const redBelow = Number(feedback.options.redBelow ?? 10)
-				const yellowBelow = Number(feedback.options.yellowBelow ?? 20)
-
-				if (remaining < redBelow) {
-					return { bgcolor: COLORS.RED, color: COLORS.WHITE }
-				}
-
-				if (remaining <= yellowBelow) {
-					return { bgcolor: COLORS.AMBER, color: COLORS.BLACK }
-				}
-
-				return { bgcolor: COLORS.GREEN, color: COLORS.WHITE }
+				// Strict "below", matching the feedback name: remaining == seconds is not below.
+				return typeof remaining === 'number' && remaining < seconds
 			},
 		}
 
@@ -723,6 +756,11 @@ export const feedbacks = {
 		const ha = DATA.ha
 		const warning = DATA.temporaryWarning ? DATA.temporaryWarningType : ''
 
+		// The armed event and the latest running event both feed the status countdown tiles; either
+		// target's run state, duration mode or remaining second changes a tile's colour (the same six
+		// values the old advanced status band tracked), so both booleans share this signature.
+		const band = `${armed?.Status}|${armed?.DurationMode}|${armed?.RemainingSeconds}|${latest?.Status}|${latest?.DurationMode}|${latest?.RemainingSeconds}`
+
 		// Running IDs newest first ('' while nothing runs), and each fixed slot's event and remaining time
 		let runningIds = ''
 		let slotTimes = ''
@@ -750,9 +788,8 @@ export const feedbacks = {
 			eventIsRunning: `${runningIds}|${armed?.Status}`,
 			runningRemainingBelow: slotTimes,
 			runningCountAtLeast: DATA.running.length,
-			// The armed event and the latest running event both feed the band; either target's
-			// run state, duration mode or remaining second changes the colour, so track all six.
-			statusBand: `${armed?.Status}|${armed?.DurationMode}|${armed?.RemainingSeconds}|${latest?.Status}|${latest?.DurationMode}|${latest?.RemainingSeconds}`,
+			countingDown: band,
+			remainingTimeBelow: band,
 			vMixConnected: DATA.vmixStatus,
 			vMixDisconnected: DATA.vmixStatus,
 			scte104Connected: DATA.scte104Status,

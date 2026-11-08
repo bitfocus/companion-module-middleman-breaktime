@@ -287,6 +287,11 @@ export interface ActionSpec {
 	/** When true the warning is returned in the report instead of raised (End `all` combines them) */
 	deferWarning?: boolean
 	/**
+	 * The action callback's abort signal; when it has aborted, the post-send warning is suppressed (and not
+	 * deferred), because the operator cancelled the running actions. The line is still logged.
+	 */
+	signal?: AbortSignal
+	/**
 	 * Called with the report just before the gesture's line is written (arm presses folded into this request log
 	 * there, so lines follow press order)
 	 */
@@ -853,14 +858,19 @@ export const api = {
 	parseFrame(raw: WebSocket.RawData): unknown {
 		const self: BreakTimeInstance = this
 
+		// ws delivers one of Buffer | ArrayBuffer | Buffer[]; decode each to the frame's utf8 text
+		const text = Buffer.isBuffer(raw)
+			? raw.toString('utf8')
+			: Array.isArray(raw)
+				? Buffer.concat(raw).toString('utf8')
+				: Buffer.from(raw).toString('utf8')
+
 		if (self.config.verboseWebsocket && self.config.verbose) {
-			// eslint-disable-next-line @typescript-eslint/no-base-to-string -- ws delivers a Buffer, whose toString is the frame text
-			self.log('debug', `state: frame dump ${raw}`)
+			self.log('debug', `state: frame dump ${text}`)
 		}
 
 		try {
-			// JSON.parse coerces the Buffer to its text, as the 1.x code relied on
-			return JSON.parse(raw as unknown as string)
+			return JSON.parse(text)
 		} catch (error) {
 			self.logFrameError(error)
 			return undefined
@@ -1840,16 +1850,18 @@ export const api = {
 	 * unknown outcome.
 	 *
 	 * @param options - Action options; undefined values take their defaults
+	 * @param signal - Abort signal from the action callback; cancels the in-flight request and skips the cancelled-action warning
 	 * @returns Resolves when BreakTime answered or the request was not sent
 	 */
-	async startSelected(options?: CompanionOptionValues): Promise<void> {
+	async startSelected(options?: CompanionOptionValues, signal?: AbortSignal): Promise<void> {
 		const self: BreakTimeInstance = this
 
 		const choice = options?.event ?? self.CHOICE_ARMED_EVENT.id
 		const immediate = !!options?.immediate
 		const onlyWhenIdle = !!options?.onlyWhenIdle
+		const pressKey = `start:${typeof choice === 'string' ? choice : JSON.stringify(choice)}`
 
-		if (self.isPressDebounced('start')) {
+		if (self.isPressDebounced(pressKey)) {
 			self.reportPressDebounced('start', {})
 			return
 		}
@@ -1898,13 +1910,15 @@ export const api = {
 			return
 		}
 
-		self.markPressSent('start')
+		self.markPressSent(pressKey)
 
-		const result = await self.sendREST(`/api/playlist/events/${encodeURIComponent(event.ID)}/start`, {
-			immediate: immediate,
-		})
+		const result = await self.sendREST(
+			`/api/playlist/events/${encodeURIComponent(event.ID)}/start`,
+			{ immediate: immediate },
+			signal,
+		)
 
-		const report = self.reportActionResult({ verb: 'start', kind: 'start', fields: fields }, result)
+		const report = self.reportActionResult({ verb: 'start', kind: 'start', fields: fields, signal: signal }, result)
 
 		if (report.accepted || report.unknown) {
 			self.requestState()
@@ -1920,21 +1934,29 @@ export const api = {
 	 * RequestState after an accepted start and after an unknown outcome.
 	 *
 	 * @param options - Action options; undefined values take their defaults
+	 * @param signal - Abort signal from the action callback; cancels the in-flight request and skips the cancelled-action warning
 	 * @returns Resolves when BreakTime answered or the request was not sent
 	 */
-	async startArmed(options?: CompanionOptionValues): Promise<void> {
+	async startArmed(options?: CompanionOptionValues, signal?: AbortSignal): Promise<void> {
 		const self: BreakTimeInstance = this
 
-		if (self.isPressDebounced('start')) {
+		// Share the armed debounce key with a Start Event action that targets the armed event, so a
+		// genuine double-tap across the two action types is still debounced
+		const pressKey = `start:${self.CHOICE_ARMED_EVENT.id}`
+
+		if (self.isPressDebounced(pressKey)) {
 			self.reportPressDebounced('start armed', {})
 			return
 		}
 
-		self.markPressSent('start')
+		self.markPressSent(pressKey)
 
-		const result = await self.sendREST('/api/playlist/start', { immediate: !!options?.immediate })
+		const result = await self.sendREST('/api/playlist/start', { immediate: !!options?.immediate }, signal)
 
-		const report = self.reportActionResult({ verb: 'start armed', kind: 'startArmed', fields: {} }, result)
+		const report = self.reportActionResult(
+			{ verb: 'start armed', kind: 'startArmed', fields: {}, signal: signal },
+			result,
+		)
 
 		if (report.accepted || report.unknown) {
 			self.requestState()
@@ -1944,24 +1966,30 @@ export const api = {
 	/**
 	 * End Running Event: ends the latest running event, all of them, or a chosen one
 	 *
-	 * A press within PRESS_DEBOUNCE_MS of the last end press that sent a request, whatever
-	 * its target, is refused first. `latest` and `all` read the running events from the last
+	 * A repeat of the SAME end target within PRESS_DEBOUNCE_MS of the end press that sent a
+	 * request is refused first; a later end press for a DIFFERENT target (`latest`, `all` or a
+	 * specific event) is not blocked. `latest` and `all` read the running events from the last
 	 * frame, so they are refused locally while not connected; `specific` stays allowed then.
 	 * Nothing running, or a `specific` event that is not running, is refused locally with an
 	 * `event` warning. `all` posts every end concurrently, logs one line per event and
 	 * raises one combined warning. RequestState is sent at most once.
 	 *
 	 * @param options - Action options; undefined values take their defaults
+	 * @param signal - Abort signal from the action callback; cancels the in-flight requests and skips the cancelled-action warning
 	 * @returns Resolves when every end answered or the request was not sent
 	 */
-	async endSelected(options?: CompanionOptionValues): Promise<void> {
+	async endSelected(options?: CompanionOptionValues, signal?: AbortSignal): Promise<void> {
 		const self: BreakTimeInstance = this
 
 		const rawTarget = options?.target
 		const target = rawTarget === 'all' || rawTarget === 'specific' ? rawTarget : 'latest'
 		const immediate = !!options?.immediate
+		const pressKey =
+			target === 'specific'
+				? `end:specific:${typeof options?.event === 'string' ? options.event : JSON.stringify(options?.event)}`
+				: `end:${target}`
 
-		if (self.isPressDebounced('end')) {
+		if (self.isPressDebounced(pressKey)) {
 			self.reportPressDebounced('end', { target: target })
 			return
 		}
@@ -2005,11 +2033,15 @@ export const api = {
 
 		const deferWarning = targets.length > 1
 
-		self.markPressSent('end')
+		self.markPressSent(pressKey)
 
 		const settled = await Promise.allSettled(
 			targets.map(async (event) =>
-				self.sendREST(`/api/playlist/events/${encodeURIComponent(event.ID)}/end`, { immediate: immediate }),
+				self.sendREST(
+					`/api/playlist/events/${encodeURIComponent(event.ID)}/end`,
+					{ immediate: immediate },
+					signal,
+				),
 			),
 		)
 
@@ -2026,6 +2058,7 @@ export const api = {
 					kind: 'end',
 					fields: { target: target, event: event.Name, id: event.ID },
 					deferWarning: deferWarning,
+					signal: signal,
 				},
 				result,
 			)
@@ -2055,31 +2088,33 @@ export const api = {
 	},
 
 	/**
-	 * Returns true when a Start (or End) press falls within PRESS_DEBOUNCE_MS of the last press of its group
-	 * that sent a request
+	 * Returns true when a Start (or End) press falls within PRESS_DEBOUNCE_MS of the last press to the same
+	 * target that sent a request
 	 *
-	 * Hot path of every Start and End press: one clock read and a compare. The clock is
-	 * monotonic (`performance.now()`), so a wall-clock step cannot hold the window open.
+	 * Hot path of every Start and End press: one map lookup and a compare. The clock is
+	 * monotonic (`performance.now()`), so a wall-clock step cannot hold the window open. Keying by
+	 * target means two differently-targeted Start (or End) actions on one button each debounce
+	 * independently, while a genuine repeat of the same target is still ignored.
 	 *
-	 * @param group - `start` (Start Event and Start Armed Event) or `end` (End Running Event)
+	 * @param key - Press-target key, e.g. `start:armed`, `start:<eventId>`, `end:latest`, `end:specific:<eventId>`
 	 * @returns True when the press must be ignored
 	 */
-	isPressDebounced(group: 'start' | 'end'): boolean {
+	isPressDebounced(key: string): boolean {
 		const self: BreakTimeInstance = this
-		const sentAt = self.pressSentAt[group]
+		const sentAt = self.pressSentAt.get(key)
 
-		return sentAt !== null && performance.now() - sentAt < PRESS_DEBOUNCE_MS
+		return sentAt !== undefined && performance.now() - sentAt < PRESS_DEBOUNCE_MS
 	},
 
 	/**
-	 * Opens the press debounce window of a group: call just before a Start (or End) press sends its request
+	 * Opens the press debounce window for a target: call just before a Start (or End) press sends its request
 	 *
-	 * @param group - `start` or `end`
+	 * @param key - Press-target key (see `isPressDebounced`)
 	 * @returns void
 	 */
-	markPressSent(group: 'start' | 'end'): void {
+	markPressSent(key: string): void {
 		const self: BreakTimeInstance = this
-		self.pressSentAt[group] = performance.now()
+		self.pressSentAt.set(key, performance.now())
 	},
 
 	/**
@@ -2103,7 +2138,7 @@ export const api = {
 	},
 
 	/**
-	 * Closes both press debounce windows, so the next Start or End press acts at once
+	 * Closes every press debounce window, so the next Start or End press acts at once
 	 *
 	 * Called when the connection is lost and when the host or port changes: a press made
 	 * then belongs to a new connection, not to the press before it.
@@ -2112,28 +2147,29 @@ export const api = {
 	 */
 	releasePressWindows(): void {
 		const self: BreakTimeInstance = this
-		self.pressSentAt.start = null
-		self.pressSentAt.end = null
+		self.pressSentAt.clear()
 	},
 
 	/**
 	 * Arm Next: arms the event after the armed one, wrapping from the last to the first
 	 *
+	 * @param signal - Abort signal from the action callback; cancels this press's own arm request and skips the cancelled-action warning
 	 * @returns Resolves when this press's own request answered, or at once for a folded press
 	 */
-	async selectNextEvent(): Promise<void> {
+	async selectNextEvent(signal?: AbortSignal): Promise<void> {
 		const self: BreakTimeInstance = this
-		await self.stepArm(1)
+		await self.stepArm(1, signal)
 	},
 
 	/**
 	 * Arm Previous: arms the event before the armed one, wrapping from the first to the last
 	 *
+	 * @param signal - Abort signal from the action callback; cancels this press's own arm request and skips the cancelled-action warning
 	 * @returns Resolves when this press's own request answered, or at once for a folded press
 	 */
-	async selectPreviousEvent(): Promise<void> {
+	async selectPreviousEvent(signal?: AbortSignal): Promise<void> {
 		const self: BreakTimeInstance = this
-		await self.stepArm(-1)
+		await self.stepArm(-1, signal)
 	},
 
 	/**
@@ -2146,9 +2182,10 @@ export const api = {
 	 * playlist sends nothing.
 	 *
 	 * @param direction - 1 for Next, -1 for Previous
+	 * @param signal - Abort signal from the action callback; cancels this press's own arm request and skips the cancelled-action warning
 	 * @returns Resolves when this press's own request answered, or at once for a folded press
 	 */
-	async stepArm(direction: 1 | -1): Promise<void> {
+	async stepArm(direction: 1 | -1, signal?: AbortSignal): Promise<void> {
 		const self: BreakTimeInstance = this
 
 		const verb = direction > 0 ? 'arm next' : 'arm previous'
@@ -2170,16 +2207,17 @@ export const api = {
 			nextIndex = (index + direction + events.length) % events.length
 		}
 
-		await self.armEvent(verb, events[nextIndex])
+		await self.armEvent(verb, events[nextIndex], signal)
 	},
 
 	/**
 	 * Arm Event: arms the event chosen in the action's `event` option
 	 *
 	 * @param options - Action options
+	 * @param signal - Abort signal from the action callback; cancels this press's own arm request and skips the cancelled-action warning
 	 * @returns Resolves when this press's own request answered, or at once for a folded press
 	 */
-	async selectEvent(options?: CompanionOptionValues): Promise<void> {
+	async selectEvent(options?: CompanionOptionValues, signal?: AbortSignal): Promise<void> {
 		const self: BreakTimeInstance = this
 
 		const resolved = self.resolveChosenEvent(options?.event)
@@ -2191,7 +2229,7 @@ export const api = {
 			return
 		}
 
-		await self.armEvent('arm', resolved.event)
+		await self.armEvent('arm', resolved.event, signal)
 	},
 
 	/**
@@ -2209,9 +2247,10 @@ export const api = {
 	 *
 	 * @param verb - `action:` verb (`arm`, `arm next` or `arm previous`)
 	 * @param event - Event to arm
+	 * @param signal - Abort signal of the press that leads a new flight; a folded press sends nothing, so its signal is dropped
 	 * @returns Resolves when this press's own request answered, or at once for a folded press
 	 */
-	async armEvent(verb: string, event: { ID: string; Name?: string }): Promise<void> {
+	async armEvent(verb: string, event: { ID: string; Name?: string }, signal?: AbortSignal): Promise<void> {
 		const self: BreakTimeInstance = this
 
 		const press: ArmPress = {
@@ -2231,7 +2270,7 @@ export const api = {
 		self.armFlight = { waiting: [], dropped: false }
 
 		try {
-			await self.runArmRequest(press, [])
+			await self.runArmRequest(press, [], signal)
 		} catch (error) {
 			// Not expected: sendREST and reportActionResult never throw. Reset the flight as
 			// the chained request's .catch does, so a throw can never leave every later arm
@@ -2256,12 +2295,13 @@ export const api = {
 	 *
 	 * @param lead - Press whose target this request carries
 	 * @param folded - Presses that folded into this request, in press order
+	 * @param signal - Abort signal of the lead press; omitted for the coalesced follow-up, which no live callback awaits
 	 * @returns Resolves when the request has settled and any follow-up has been dispatched
 	 */
-	async runArmRequest(lead: ArmPress, folded: ArmPress[]): Promise<void> {
+	async runArmRequest(lead: ArmPress, folded: ArmPress[], signal?: AbortSignal): Promise<void> {
 		const self: BreakTimeInstance = this
 
-		const result = await self.sendREST('/api/playlist/next-event', { nextEventID: lead.event.ID })
+		const result = await self.sendREST('/api/playlist/next-event', { nextEventID: lead.event.ID }, signal)
 
 		if (self.destroyed) {
 			return
@@ -2274,6 +2314,7 @@ export const api = {
 				fields: { event: lead.event.Name, id: lead.event.ID },
 				acting: lead.standbyWarning ? false : undefined,
 				standbyWarning: lead.standbyWarning,
+				signal: signal,
 				beforeLog: (settled) => {
 					// The folded presses came before the lead press: log them first
 					for (const press of folded) {
@@ -2307,6 +2348,9 @@ export const api = {
 				self.armFlight = { waiting: [], dropped: false }
 			}
 
+			// The coalesced follow-up runs signal-free: the press that requested it has already
+			// returned, so no live callback awaits it and its own signal may have settled; only the
+			// REST timeout bounds it.
 			self.runArmRequest(next, waiting.slice(0, -1)).catch((error) => {
 				// Not expected: sendREST and reportActionResult never throw. Contain it, since
 				// this chain is not awaited and an unhandled rejection ends the process.
@@ -2402,22 +2446,24 @@ export const api = {
 	 * Armed Duration +: lengthens the armed event's duration
 	 *
 	 * @param options - Action options
+	 * @param signal - Abort signal from the action callback; cancels the in-flight request and skips the cancelled-action warning
 	 * @returns Resolves when BreakTime answered or the request was not sent
 	 */
-	async increaseDuration(options?: CompanionOptionValues): Promise<void> {
+	async increaseDuration(options?: CompanionOptionValues, signal?: AbortSignal): Promise<void> {
 		const self: BreakTimeInstance = this
-		await self.changeDuration('increaseDuration', 1, options?.duration ?? '5')
+		await self.changeDuration('increaseDuration', 1, options?.duration ?? 5, signal)
 	},
 
 	/**
 	 * Armed Duration -: shortens the armed event's duration
 	 *
 	 * @param options - Action options
+	 * @param signal - Abort signal from the action callback; cancels the in-flight request and skips the cancelled-action warning
 	 * @returns Resolves when BreakTime answered or the request was not sent
 	 */
-	async decreaseDuration(options?: CompanionOptionValues): Promise<void> {
+	async decreaseDuration(options?: CompanionOptionValues, signal?: AbortSignal): Promise<void> {
 		const self: BreakTimeInstance = this
-		await self.changeDuration('decreaseDuration', -1, options?.duration ?? '5')
+		await self.changeDuration('decreaseDuration', -1, options?.duration ?? 5, signal)
 	},
 
 	/**
@@ -2431,13 +2477,15 @@ export const api = {
 	 *
 	 * @param warningType - Warning type for refusals
 	 * @param sign - Direction
-	 * @param amount - Option value: whole seconds as text (or a number from a 1.0.3 button)
+	 * @param amount - Option value: whole seconds as a number (or text from a 2.0.x button)
+	 * @param signal - Abort signal from the action callback; cancels the in-flight request and skips the cancelled-action warning
 	 * @returns Resolves when BreakTime answered or the request was not sent
 	 */
 	async changeDuration(
 		warningType: 'increaseDuration' | 'decreaseDuration',
 		sign: 1 | -1,
 		amount: JsonValue,
+		signal?: AbortSignal,
 	): Promise<void> {
 		const self: BreakTimeInstance = this
 
@@ -2477,9 +2525,11 @@ export const api = {
 
 		fields.delta = delta
 
-		const result = await self.sendREST(`/api/playlist/events/${encodeURIComponent(armed.ID)}/duration`, {
-			delta: delta,
-		})
+		const result = await self.sendREST(
+			`/api/playlist/events/${encodeURIComponent(armed.ID)}/duration`,
+			{ delta: delta },
+			signal,
+		)
 
 		const report = self.reportActionResult(
 			{
@@ -2489,6 +2539,7 @@ export const api = {
 				warningType: warningType,
 				acting: standbyWarning ? false : undefined,
 				standbyWarning: standbyWarning,
+				signal: signal,
 			},
 			result,
 		)
@@ -2509,12 +2560,13 @@ export const api = {
 	 * and the target as `to=`.
 	 *
 	 * @param options - Action options
+	 * @param signal - Abort signal from the action callback; cancels the in-flight request and skips the cancelled-action warning
 	 * @returns Resolves when BreakTime answered or the request was not sent
 	 */
-	async setArmedDuration(options?: CompanionOptionValues): Promise<void> {
+	async setArmedDuration(options?: CompanionOptionValues, signal?: AbortSignal): Promise<void> {
 		const self: BreakTimeInstance = this
 
-		const amount = options?.seconds ?? '60'
+		const amount = options?.seconds ?? 60
 		const seconds = typeof amount === 'string' && amount.trim() === '' ? NaN : Number(amount)
 		const valid = Number.isInteger(seconds)
 		const armed = self.DATA.selectedEvent
@@ -2570,9 +2622,11 @@ export const api = {
 		const previous = self.pendingDuration
 		const entry = self.setPendingDuration(armed.ID, seconds)
 
-		const result = await self.sendREST(`/api/playlist/events/${encodeURIComponent(armed.ID)}/duration`, {
-			delta: delta,
-		})
+		const result = await self.sendREST(
+			`/api/playlist/events/${encodeURIComponent(armed.ID)}/duration`,
+			{ delta: delta },
+			signal,
+		)
 
 		const report = self.reportActionResult(
 			{
@@ -2582,6 +2636,7 @@ export const api = {
 				warningType: warningType,
 				acting: standbyWarning ? false : undefined,
 				standbyWarning: standbyWarning,
+				signal: signal,
 			},
 			result,
 		)
@@ -2906,18 +2961,30 @@ export const api = {
 	 *
 	 * @param path - Route path, e.g. `/api/playlist/next-event`
 	 * @param form - Form fields, encoded by `encodeForm()`
+	 * @param signal - Abort signal from the action callback, combined with the REST timeout; omit for internal sends
 	 * @returns The result, or null after `destroy()`
 	 */
-	async sendREST(path: string, form: Record<string, boolean | number | string>): Promise<RestResult | null> {
+	async sendREST(
+		path: string,
+		form: Record<string, boolean | number | string>,
+		signal?: AbortSignal,
+	): Promise<RestResult | null> {
 		const self: BreakTimeInstance = this
 
 		const gen = self.attemptGen
 
-		const result = await self.restRequest('POST', path, form, self.apiKey, {
-			host: self.config.host,
-			port: self.config.port,
-			apiKey: self.apiKey,
-		})
+		const result = await self.restRequest(
+			'POST',
+			path,
+			form,
+			self.apiKey,
+			{
+				host: self.config.host,
+				port: self.config.port,
+				apiKey: self.apiKey,
+			},
+			signal,
+		)
 
 		if (self.destroyed) {
 			return null
@@ -2939,6 +3006,7 @@ export const api = {
 	 * @param form - Form fields for a POST, or undefined
 	 * @param apiKey - API key to send, or '' to send none
 	 * @param target - Host and port to send to
+	 * @param signal - Optional caller abort signal, combined with the REST timeout so either one aborts the request
 	 * @returns The result
 	 */
 	async restRequest(
@@ -2947,6 +3015,7 @@ export const api = {
 		form: Record<string, boolean | number | string> | undefined,
 		apiKey: string,
 		target: AttemptTarget,
+		signal?: AbortSignal,
 	): Promise<RestResult> {
 		const self: BreakTimeInstance = this
 
@@ -2956,7 +3025,9 @@ export const api = {
 		const options: RequestInit = {
 			method: method,
 			headers: headers,
-			signal: AbortSignal.timeout(self.REST_TIMEOUT_MS),
+			signal: signal
+				? AbortSignal.any([signal, AbortSignal.timeout(self.REST_TIMEOUT_MS)])
+				: AbortSignal.timeout(self.REST_TIMEOUT_MS),
 		}
 
 		if (form !== undefined) {
@@ -3042,8 +3113,9 @@ export const api = {
 	 * the next attempt re-derives AuthenticationFailure, but only when the request was sent
 	 * on the current attempt. When the response raised no warning and the spec carries a
 	 * standby warning, the `ha` warning is raised instead. With `spec.deferWarning` the
-	 * warning is returned in the report instead of raised. Never auto-retries and never sends
-	 * RequestState.
+	 * warning is returned in the report instead of raised. When `spec.signal` has aborted (the
+	 * operator cancelled the running actions), the line is still logged but no warning is raised
+	 * or deferred. Never auto-retries and never sends RequestState.
 	 *
 	 * @param spec - What was requested
 	 * @param result - What `sendREST` returned; null after `destroy()`
@@ -3210,10 +3282,17 @@ export const api = {
 			took: self.formatDuration(result.took),
 		})
 
-		if (warningType && spec.deferWarning) {
-			report.warning = { type: warningType, text: warningText }
-		} else if (warningType) {
-			self.issueWarning(warningType, warningText, self.WARNING_MS)
+		// Operator cancelled the running actions: the request was aborted through the callback's
+		// signal, so suppress the user-facing warning (the line above is still logged). A deferred
+		// warning is dropped too, so End `all` does not surface one for a cancelled send.
+		const aborted = spec.signal?.aborted === true
+
+		if (warningType && !aborted) {
+			if (spec.deferWarning) {
+				report.warning = { type: warningType, text: warningText }
+			} else {
+				self.issueWarning(warningType, warningText, self.WARNING_MS)
+			}
 		}
 
 		return report

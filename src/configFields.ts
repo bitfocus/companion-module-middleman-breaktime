@@ -6,11 +6,14 @@
  * normalizes and clamps every value before use. Host and Port are always shown; the
  * other settings show only while Show Advanced Settings is on.
  *
- * The connection uses the legacy 12-column `width` grid; main.ts sets
- * `instanceOptions.disableNewConfigLayout = true` so base 2.x keeps rendering it as the
- * grid was designed. The two checkboxes referenced by an `isVisibleExpression`
- * (`showAdvanced` and `verbose`) carry `disableAutoExpression: true`, which base 2.x
- * requires for any field an `isVisibleExpression` reads.
+ * The connection uses base 2.x's automatic config layout: `disableNewConfigLayout` is no longer
+ * set (it is `@deprecated` in base 2.2.2), so base lays the fields out itself and the hand-built
+ * 12-column grid is gone. Every config field sets `width` because base 2.2.2's
+ * `CompanionConfigField` requires it (the module template sets it the same way, e.g. host 8 /
+ * port 4); the automatic layout positions the fields itself and does not use these values. The two
+ * checkboxes referenced by an `isVisibleExpression` (`showAdvanced` and `verbose`) carry
+ * `disableAutoExpression: true`, which base 2.x requires for any field an `isVisibleExpression`
+ * reads.
  *
  * @module companion-module-middleman-breaktime
  * @see {@link https://github.com/bitfocus/companion-module-middleman-breaktime}
@@ -29,11 +32,10 @@ export const configFields = {
 	 * module's own `PORT_REGEX` (1 to 65535, leading zeros allowed) instead of `Regex.PORT`,
 	 * which stops at 65534; main.ts checks the stored values with the same patterns.
 	 *
-	 * Layout on the 12-column grid, where fields flow left to right and wrap to a new row
-	 * when the next one would pass 12: Information; a divider; Host (8) and Port (4); a
-	 * second divider; Show Advanced Settings (12). With it on: API Key (12); Running Event
-	 * Slots (4) plus an empty static-text filler (8) with the same visibility, so no other
-	 * field joins its row; Verbose Logging (6) and Log Raw BreakTime Data (6).
+	 * Fields render in base 2.x's automatic layout (each field sets the `width` base 2.2.2 requires;
+	 * the layout positions the fields itself and does not use it), in definition order: Information;
+	 * a divider; Host; Port; a second divider; Show Advanced Settings. With it on: API Key; Running
+	 * Event Slots; Verbose Logging; and Log Raw BreakTime Data.
 	 *
 	 * `showAdvanced` only drives the `isVisibleExpression` of the fields after it: the module
 	 * never reads it, and main.ts leaves it out of the settings it compares, so saving it
@@ -112,14 +114,6 @@ export const configFields = {
 				default: self.DEFAULT_RUNNING_SLOTS,
 				min: 1,
 				max: self.MAX_RUNNING_SLOTS,
-				isVisibleExpression: '$(options:showAdvanced)',
-			},
-			{
-				type: 'static-text',
-				id: 'runningSlotsFiller',
-				width: 8,
-				label: '',
-				value: '',
 				isVisibleExpression: '$(options:showAdvanced)',
 			},
 			{
