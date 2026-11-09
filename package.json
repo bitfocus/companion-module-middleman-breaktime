@@ -10,7 +10,7 @@
 	},
 	"license": "MIT",
 	"dependencies": {
-		"@companion-module/base": "^1.11.2",
+		"@companion-module/base": "^1.15.1",
 		"ws": "^8.21.0"
 	},
 	"repository": {
@@ -18,7 +18,7 @@
 		"url": "git+https://github.com/bitfocus/companion-module-middleman-breaktime.git"
 	},
 	"devDependencies": {
-		"@companion-module/tools": "^2.8.0",
+		"@companion-module/tools": "^2.9.1",
 		"prettier": "^3.2.5"
 	},
 	"prettier": "@companion-module/tools/.prettierrc.json",
