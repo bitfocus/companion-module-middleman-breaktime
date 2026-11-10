@@ -61,13 +61,20 @@ const TILE_STYLES: Record<TileView['state'], { bgcolor: number; color: number }>
 const TILE_SIZE: CompanionTextSize = '14'
 
 /**
- * Converts a variable-enabled option (already parsed by Companion) to an integer
+ * Converts a Seconds or Slot number option (already parsed by Companion) to an integer
  *
- * @param value - Option value: text, or a number from a stored button
- * @returns The integer, or null when the value is blank or not a whole number
+ * A missing value gives null, so the feedback is false instead of comparing against a default
+ * nobody set: undefined or null is how an expression that resolves to nothing arrives. null is
+ * checked explicitly because `Number(null)` is 0.
+ *
+ * @param value - Option value: a number, or numeric text stored by a 2.0.x button
+ * @returns The integer, or null when the value is missing, blank or not a whole number
  */
 function toInteger(value: unknown): number | null {
-	const number = typeof value === 'string' && value.trim() === '' ? NaN : Number(value)
+	const number =
+		value === undefined || value === null || (typeof value === 'string' && value.trim() === '')
+			? NaN
+			: Number(value)
 
 	return Number.isInteger(number) ? number : null
 }
@@ -195,14 +202,17 @@ export const feedbacks = {
 					min: 1,
 					max: self.DURATION_MAX_TIME_SIGNAL_S,
 					asInteger: true,
-					// Let an out-of-range/non-integer expression value reach the guarded callback (which
-					// returns false) rather than base silently skipping the feedback
+					// Companion rounds a fractional number itself (asInteger). With this flag it passes a
+					// missing, non-numeric or out-of-range value through instead of skipping the feedback.
+					// The callback returns false for a missing or non-numeric value, never falling back to
+					// `default` (that would light the button for a duration nobody set), and compares an
+					// out-of-range number as given.
 					allowInvalidValues: true,
 					tooltip: "Seconds to compare against the armed event's duration.",
 				},
 			],
 			callback: async (feedback) => {
-				const seconds = toInteger(feedback.options.seconds ?? 60)
+				const seconds = toInteger(feedback.options.seconds)
 
 				if (seconds === null || self.DATA.selectedEvent?.DurationMode !== 0) {
 					return false
@@ -268,8 +278,10 @@ export const feedbacks = {
 					min: 1,
 					max: self.MAX_RUNNING_SLOTS,
 					asInteger: true,
-					// Let an out-of-range/non-integer expression value reach the guarded callback (which
-					// returns false) rather than base silently skipping the feedback
+					// Companion rounds a fractional number itself (asInteger). With this flag it passes a
+					// missing, non-numeric or out-of-range value through instead of skipping the feedback.
+					// The callback returns false for each of those, never falling back to `default` (that
+					// would watch a slot nobody chose).
 					allowInvalidValues: true,
 					tooltip: `1 to ${self.MAX_RUNNING_SLOTS}. An event keeps its slot until it ends.`,
 				},
@@ -281,16 +293,19 @@ export const feedbacks = {
 					min: 0,
 					max: self.DURATION_MAX_TIME_SIGNAL_S,
 					asInteger: true,
-					// Let an out-of-range/non-integer expression value reach the guarded callback (which
-					// returns false) rather than base silently skipping the feedback
+					// Companion rounds a fractional number itself (asInteger). With this flag it passes a
+					// missing, non-numeric or out-of-range value through instead of skipping the feedback.
+					// The callback returns false for a missing, non-numeric or negative value, never
+					// falling back to `default` (that would apply a threshold nobody set), and compares a
+					// number above the maximum as given.
 					allowInvalidValues: true,
 					tooltip:
 						"Turn on when the slot's remaining time drops below this many seconds (Count Down events only).",
 				},
 			],
 			callback: async (feedback) => {
-				const slot = toInteger(feedback.options.slot ?? 1)
-				const seconds = toInteger(feedback.options.seconds ?? 10)
+				const slot = toInteger(feedback.options.slot)
+				const seconds = toInteger(feedback.options.seconds)
 
 				if (slot === null || slot < 1 || slot > self.MAX_RUNNING_SLOTS || seconds === null || seconds < 0) {
 					return false
@@ -425,15 +440,18 @@ export const feedbacks = {
 					min: 1,
 					max: self.DURATION_MAX_TIME_SIGNAL_S,
 					asInteger: true,
-					// Let an out-of-range/non-integer expression value reach the guarded callback (which
-					// returns false) rather than base silently skipping the feedback
+					// Companion rounds a fractional number itself (asInteger). With this flag it passes a
+					// missing, non-numeric or out-of-range value through instead of skipping the feedback.
+					// The callback returns false for a missing or non-numeric value, never falling back to
+					// `default` (that would apply a threshold nobody set), and compares an out-of-range
+					// number as given.
 					allowInvalidValues: true,
 					tooltip:
 						"Turn on when the target's remaining time drops below this many seconds (Count Down events only).",
 				},
 			],
 			callback: async (feedback) => {
-				const seconds = toInteger(feedback.options.seconds ?? 20)
+				const seconds = toInteger(feedback.options.seconds)
 
 				if (seconds === null) {
 					return false

@@ -2,11 +2,15 @@
  * @fileoverview Action definitions for the BreakTime module
  *
  * Each callback awaits its handler in api.ts, so Companion's action call resolves only
- * after BreakTime answered (or REST_TIMEOUT_MS passed). The exception is an arm press made
- * while another arm request is in flight: it is folded into the next request and returns
- * at once (see `armEvent()` in api.ts). Handlers never throw, and each one receives the
- * raw `action.options`: an option missing from a button created before it existed (or
- * from a preset) is treated as its definition default by the handler.
+ * after BreakTime answered, REST_TIMEOUT_MS passed, or Companion aborted the callback: each
+ * handler is passed `context.signal`, which cancels its in-flight request. The exception is
+ * an arm press made while another arm request is in flight: it is folded into the next
+ * request and returns at once (see `armEvent()` in api.ts). Handlers never throw, and each
+ * one receives the raw `action.options`: an option missing from a button created before it
+ * existed (or from a preset) is treated as its definition default by the handler. The
+ * Seconds options are the exception: a missing value is refused with a warning like any
+ * other invalid value, never defaulted (see `changeDuration()` and `setArmedDuration()` in
+ * api.ts).
  *
  * Stored action IDs are unchanged from 1.0.3; only the display names changed
  * ("Selected" is now "Armed", matching the BreakTime UI).
@@ -161,8 +165,10 @@ export const actions = {
 					min: 1,
 					max: self.DURATION_STEP_MAX_S,
 					asInteger: true,
-					// Pass an out-of-range/non-integer expression value through to the handler's own
-					// validate-and-warn path instead of letting base silently skip the action
+					// Companion rounds a fractional number itself (asInteger). With this flag it passes a
+					// missing, non-numeric or out-of-range value through instead of skipping the action,
+					// and the handler refuses it with a warning. A missing value is never replaced by
+					// `default`: that would change the duration by an amount nobody set.
 					allowInvalidValues: true,
 					tooltip: `Whole seconds to add, 1 to ${self.DURATION_STEP_MAX_S}`,
 				},
@@ -183,8 +189,10 @@ export const actions = {
 					min: 1,
 					max: self.DURATION_STEP_MAX_S,
 					asInteger: true,
-					// Pass an out-of-range/non-integer expression value through to the handler's own
-					// validate-and-warn path instead of letting base silently skip the action
+					// Companion rounds a fractional number itself (asInteger). With this flag it passes a
+					// missing, non-numeric or out-of-range value through instead of skipping the action,
+					// and the handler refuses it with a warning. A missing value is never replaced by
+					// `default`: that would change the duration by an amount nobody set.
 					allowInvalidValues: true,
 					tooltip: `Whole seconds to subtract, 1 to ${self.DURATION_STEP_MAX_S}`,
 				},
@@ -206,7 +214,10 @@ export const actions = {
 					max: self.DURATION_MAX_TIME_SIGNAL_S,
 					asInteger: true,
 					// A single field max cannot express the mode-specific limit (6553 Splice / 65535 Time
-					// Signal), so pass the value through to setArmedDuration's own validation and warning
+					// Signal), so pass the value through to setArmedDuration's own validation and warning.
+					// Companion rounds a fractional number itself (asInteger); a missing or non-numeric
+					// value is passed through too and refused there, never replaced by `default`: that
+					// would set a duration nobody chose.
 					allowInvalidValues: true,
 					tooltip: `Whole seconds: ${self.DURATION_MIN_S} to ${self.DURATION_MAX_SPLICE_S} (Splice Insert) or ${self.DURATION_MIN_S} to ${self.DURATION_MAX_TIME_SIGNAL_S} (Time Signal)`,
 				},

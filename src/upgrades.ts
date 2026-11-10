@@ -61,11 +61,14 @@ export const UpgradeScripts: CompanionStaticUpgradeScript<Config, Secrets>[] = [
 	 * Both config changes go out in one `updatedConfig`, which is null when neither applied.
 	 * Values are literals, not shared constants, so this script's behavior never changes.
 	 *
-	 * Tolerates a malformed `props.actions` without throwing: a non-array value is treated as no
-	 * actions to upgrade, and null / non-object array elements are skipped before their `actionId`
-	 * is read. An upgrade script must never throw, because a throw mutates users' stored configs
-	 * (the same rule the `options` guard below follows); base never produces these shapes in normal
-	 * host operation, so valid input is migrated exactly as before.
+	 * Never throws on malformed input: a `props` that is not an object gives an empty result, a
+	 * `props.actions` that is not an array is treated as no actions to upgrade, null / non-object
+	 * array elements are skipped before their `actionId` is read, a missing or non-object `options`
+	 * is replaced by `{}`, and a `props.config` that is not a plain object (null, a primitive or an
+	 * array) is left alone. An upgrade script must never throw, because Companion catches nothing
+	 * around it: the config pass runs while the connection starts, so a throw there stops the
+	 * connection from starting. Companion never produces these shapes in normal operation, so valid
+	 * input is migrated exactly as before.
 	 *
 	 * @param _context - Upgrade context (unused)
 	 * @param props - Stored config, actions and feedbacks
@@ -83,10 +86,20 @@ export const UpgradeScripts: CompanionStaticUpgradeScript<Config, Secrets>[] = [
 
 		const updatedActions: CompanionMigrationAction[] = []
 
+		// `props` is typed as an object, but a null or undefined value would make the
+		// `props.actions` and `props.config` reads below throw, and an upgrade script must not throw
+		// (see above). Any other non-object has nothing to upgrade either, so all of them get an
+		// empty result.
+		const received: unknown = props
+
+		if (!received || typeof received !== 'object') {
+			return { updatedConfig: null, updatedActions: [], updatedFeedbacks: [] }
+		}
+
 		// `props.actions` is typed as an array, but a malformed stored config could hand us a
 		// non-array (undefined, an object, ...). Treat anything that is not an array as "no actions
-		// to upgrade" instead of letting `for...of` throw: an upgrade script must not throw, because
-		// a throw mutates users' stored configs (same reasoning as the `options` guard below).
+		// to upgrade" instead of letting `for...of` throw (same reasoning as the `options` guard
+		// below).
 		const actions: unknown = props.actions
 		const actionList: CompanionMigrationAction[] = Array.isArray(actions) ? actions : []
 
@@ -111,7 +124,7 @@ export const UpgradeScripts: CompanionStaticUpgradeScript<Config, Secrets>[] = [
 			// Stored actions can predate the typed option shape, so guard against a missing or
 			// non-object `options` before touching it: without this, a stored action whose
 			// `options` is absent or not an object would throw a TypeError out of this upgrade,
-			// which mutates users' stored configs.
+			// which must never throw (see above).
 			const options: unknown = action.options
 
 			if (!options || typeof options !== 'object') {
@@ -145,7 +158,10 @@ export const UpgradeScripts: CompanionStaticUpgradeScript<Config, Secrets>[] = [
 		let updatedConfig: Config | null = null
 		const config = props.config
 
-		if (config) {
+		// Only a plain object is a config to fill. null (an actions-only pass) is skipped as before;
+		// a truthy primitive or an array is malformed and skipped too, so the property writes below
+		// cannot throw.
+		if (config && typeof config === 'object' && !Array.isArray(config)) {
 			let changed = false
 
 			if (config.runningSlots === undefined) {

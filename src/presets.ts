@@ -18,8 +18,8 @@
  *   START, END, END NOW and status countdown tile. For a single event trimmed on the fly.
  * - Playlist Workflow: a next-event readout, PREV / NEXT arm steppers, +/-5 s nudges, START (not
  *   idle-gated, so several events can run), END NOW, END ALL and a latest-running status tile.
- * - Info & Status: display-only readouts for the armed event, the running count, the status /
- *   message line and the SCTE 104 and vMix links.
+ * - Info & Status: display-only readouts for the armed event, the running count, the on-air
+ *   indicator, the status / message line and the SCTE 104 and vMix links.
  *
  * `initPresets()` runs at init, whenever the event list changes and when the running slot count
  * changes. Every preset is a `simple` preset, carries its action options explicitly, and is
@@ -71,21 +71,34 @@ const DURATION_PRESETS = [30, 60, 90, 120, 180]
 const SIZE_BLOCK: CompanionTextSize = '14'
 
 /**
- * Pinned text size for the compact text-only readout lines: the SCTE 104 / vMix links, the
- * running count, the armed status and the armed duration/time clocks. '7' is the only fixed
- * Companion font size below '14' (the fixed point sizes are '7', '14', '18', '24', '30', '44'),
- * and it fits a "Disconnected" / "HH:MM:SS" value on one line. Pinned rather than 'auto' so the
- * text keeps one size across every state, the no-resize goal; 'auto' stays only on the genuinely
- * variable-length name and message lines (SIZE_LABEL).
+ * Pinned text size for the compact text-only readout lines whose value can be long: the SCTE 104 /
+ * vMix links (a status word up to "Disconnected") and the armed status ("Running" / "Stopped" /
+ * "Unknown"), plus the running count. '7' is the only fixed Companion font size below '14' (the
+ * fixed point sizes are '7', '14', '18', '24', '30', '44'), and it fits a "Disconnected" /
+ * "HH:MM:SS" value on one line. Pinned rather than 'auto' so the text keeps one size across every
+ * state, the no-resize goal; 'auto' stays only on the genuinely variable-length name and message
+ * lines (SIZE_LABEL). The labeled armed Duration / Time clocks use SIZE_READOUT_LABELED instead:
+ * their label and value are both short, so they can read at a larger pinned size.
  */
 const SIZE_READOUT: CompanionTextSize = '7'
+
+/**
+ * Pinned text size for the labeled two-line armed clock readouts (Duration and Time): a short word
+ * over a short m:ss clock. Double SIZE_READOUT, because '7' was photographed as too small to read
+ * on a 72 px Stream Deck key; each line stays within the ~5-character width the '14' glyph labels
+ * (START, +30s, END\nNOW) already prove fits. Pinned, not 'auto', so the clock keeps one size
+ * across every value (the no-resize goal). A pathologically long duration (over 99 minutes) can
+ * wrap at this size; real ad-break lengths are a few minutes, well within one line.
+ */
+const SIZE_READOUT_LABELED: CompanionTextSize = '14'
 
 /** Pinned text size for the Set Armed Duration keypad (a single clock label, no glyph) */
 const SIZE_DURATION: CompanionTextSize = '18'
 
 /**
- * Pinned text size for the status countdown tiles (a single mm:ss clock, no glyph)
+ * Pinned text size for the status countdown tiles (an mm:ss clock, no glyph)
  *
+ * The armed tile is the clock alone; the latest-running tile has a static `Live` line over it.
  * Pinned so the `countingDown` and `remainingTimeBelow` boolean feedbacks — which only recolour
  * bgcolor and text — never resize the tile as it bands from green through amber to red.
  */
@@ -121,7 +134,7 @@ function buttonStyle(text: string, size: CompanionTextSize = SIZE_BLOCK): Compan
  * recolouring the tile to green, then amber, then red as the time runs down; none sets a size, so the
  * tile keeps this pinned size across every state.
  *
- * @param text - Button text; a clock variable
+ * @param text - Button text; a clock variable, optionally under a static label line
  * @param size - Pinned text size
  * @returns Style
  */
@@ -377,7 +390,8 @@ function endNowLatestPreset(): CompanionSimplePresetDefinition<BreakTimeInstance
  *
  * Black-based mm:ss clock of the armed event's remaining time. Layered boolean feedbacks band it green
  * (`countingDown`), then amber then red (`remainingTimeBelow` at 20 s and 10 s, red listed last so it
- * wins), and leave it black while the armed event is stopped or counting up.
+ * wins), and leave it black while the armed event is stopped or counting up. The feedbacks only
+ * recolour, so the tile never resizes.
  *
  * @returns Preset
  */
@@ -623,7 +637,7 @@ export const presets = {
 			'Playlist_Status',
 			buttonPreset(
 				'Status Countdown (Latest Running)',
-				blackStyle('$(breaktime:running_latest_time_mmss)', SIZE_STATUS),
+				blackStyle('Live\\n$(breaktime:running_latest_time_mmss)', SIZE_STATUS),
 				null,
 				{},
 				[
@@ -643,17 +657,18 @@ export const presets = {
 						style: { bgcolor: COLORS.RED, color: COLORS.WHITE },
 					},
 				],
-				"Shows the latest running event's remaining time. Turns green, then amber, then red as the time runs down, and stays black while nothing is running, or the latest event is counting up. Display only.",
+				"Shows the latest running event's remaining time, under a Live label. Turns green, then amber, then red as the time runs down, and stays black while nothing is running, or the latest event is counting up. Display only.",
 			),
 		)
 	},
 
 	/**
-	 * Adds the Info & Status category: the armed-event readouts, the running count and the link tiles
+	 * Adds the Info & Status category: the armed-event readouts, the running count, the on-air
+	 * indicator and the link tiles
 	 *
-	 * Nine display-only blocks: the armed event's name, status (red running, dim stopped), duration,
-	 * time and duration mode (green while Count Down); the running count (red while any run); the
-	 * status / message line; and the SCTE 104 and vMix connectivity links.
+	 * Ten display-only blocks: the armed event's name, status (red running, dim stopped), duration,
+	 * time and duration mode (green while Count Down); the running count and the on-air indicator (both
+	 * red while any event runs); the status / message line; and the SCTE 104 and vMix connectivity links.
 	 *
 	 * @param add - Category adder
 	 * @param ids - Info & Status ID list, filled in display order
@@ -694,7 +709,7 @@ export const presets = {
 						style: { bgcolor: COLORS.RED, color: COLORS.WHITE },
 					},
 				],
-				"Shows the armed event's status. Turns red while it is running, and dims while it is stopped. Display only.",
+				'Shows the status of the armed (next-to-fire) event, not what is on air: after a break fires, the arm rolls forward to the next stopped event, so this reads Stopped while that break is still on air. Use the On Air tile for live status. Turns red while the armed event itself is running, and dims while it is stopped. Display only.',
 			),
 		)
 
@@ -703,11 +718,11 @@ export const presets = {
 			'Info_ArmedDuration',
 			buttonPreset(
 				'Armed Event Duration',
-				buttonStyle('$(breaktime:selected_duration_mmss)', SIZE_READOUT),
+				buttonStyle('Dur\\n$(breaktime:selected_duration_mmss)', SIZE_READOUT_LABELED),
 				null,
 				{},
 				[],
-				"Shows the armed event's set duration as minutes and seconds. Display only.",
+				"Shows the armed event's set duration as minutes and seconds, under a Dur label. Display only.",
 			),
 		)
 
@@ -716,11 +731,11 @@ export const presets = {
 			'Info_ArmedTime',
 			buttonPreset(
 				'Armed Event Time',
-				buttonStyle('$(breaktime:selected_time_mmss)', SIZE_READOUT),
+				buttonStyle('Time\\n$(breaktime:selected_time_mmss)', SIZE_READOUT_LABELED),
 				null,
 				{},
 				[],
-				"Shows the armed event's time remaining (Count Down) or elapsed (Count Up) as minutes and seconds. Display only.",
+				"Shows the armed event's time remaining (Count Down) or elapsed (Count Up) as minutes and seconds, under a Time label. Display only.",
 			),
 		)
 
@@ -759,6 +774,25 @@ export const presets = {
 					},
 				],
 				'Shows how many events are running. Turns red while one or more are running. Display only.',
+			),
+		)
+
+		add(
+			ids,
+			'Info_OnAir',
+			buttonPreset(
+				'On Air',
+				buttonStyle('On Air\\n$(breaktime:running_latest_name)', SIZE_LABEL),
+				null,
+				{},
+				[
+					{
+						feedbackId: 'runningCountAtLeast',
+						options: { count: 1 },
+						style: { bgcolor: COLORS.RED, color: COLORS.WHITE },
+					},
+				],
+				"Shows whether any break is on air, with the latest running event's name. Turns red and shows that event's name while one or more events are running, and stays dark gray and blank when nothing is on air. Unlike Armed Event Status, which tracks the next-to-fire event, this follows what is actually on air. Display only.",
 			),
 		)
 

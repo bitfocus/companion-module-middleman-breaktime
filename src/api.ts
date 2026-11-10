@@ -505,8 +505,8 @@ export const api = {
 	 * Starts one connection attempt without awaiting it
 	 *
 	 * Closes any socket and pending re-attempt first, then captures a new attempt
-	 * generation and the target. The attempt promise always ends in `.catch`: on Node 22 an
-	 * unhandled rejection ends the process, and base installs no handler. Called by
+	 * generation and the target. The attempt promise always ends in `.catch`: an unhandled
+	 * rejection ends the process, and base installs no handler. Called by
 	 * `initConnection()`, by the re-attempt timer, and by `configUpdated` while waiting on
 	 * that timer. Never sets Connecting itself, so a re-attempt keeps the current status
 	 * until its outcome differs.
@@ -1305,7 +1305,7 @@ export const api = {
 	 * list changes. `checkVariables()` then pushes only the variables that changed and
 	 * re-checks only the affected feedback types.
 	 *
-	 * Normalization rules match the 1.x module exactly; see the architecture notes in main.ts.
+	 * The normalized shape, with the rule for each field, is `BreakTimeData` in defaults.ts.
 	 * A frame that is valid JSON but not an object is a frame error, and the whole body is
 	 * wrapped so a throw cannot escape the WebSocket message handler and end the module
 	 * process.
@@ -1627,7 +1627,8 @@ export const api = {
 	 *
 	 * Hot path: compares in place, without allocating. Always true after a new socket or a
 	 * disconnect (the previous list is null), so the first frame of every connection
-	 * rebuilds the choices from real data.
+	 * rebuilds the choices from real data. A missing or null name compares as '', the form
+	 * `rebuildEventChoices()` stores, so an unnamed event does not read as changed on every frame.
 	 *
 	 * @param events - Playlist events from the current frame
 	 * @returns True when the choices must be rebuilt
@@ -1641,7 +1642,7 @@ export const api = {
 		}
 
 		for (let index = 0; index < events.length; index++) {
-			if (keys[index * 2] !== events[index].ID || keys[index * 2 + 1] !== events[index].Name) {
+			if (keys[index * 2] !== events[index].ID || keys[index * 2 + 1] !== (events[index].Name ?? '')) {
 				return true
 			}
 		}
@@ -1842,7 +1843,9 @@ export const api = {
 	 * Start Event: starts the armed event or a chosen one (`POST /api/playlist/events/{id}/start`)
 	 *
 	 * Local guards (nothing sent, `event` warning): a press within PRESS_DEBOUNCE_MS of the
-	 * last start press that sent a request (checked first); with the armed default, refused
+	 * last start press for the same target that sent a request (checked first; the target is
+	 * the armed default, a window shared with Start Armed Event, or the chosen event's ID, so a
+	 * start press for a different target is not blocked); with the armed default, refused
 	 * while not connected (the cached arm may be stale) or when nothing is armed; a chosen
 	 * event that is not in the playlist; an event that is already running; and with
 	 * `onlyWhenIdle`, any running event (or running state unknown). A chosen event stays
@@ -1930,8 +1933,9 @@ export const api = {
 	 *
 	 * Stays allowed while not connected: BreakTime reads its own arm. The log line names the
 	 * event from `ack.eventId` (and that ID's name in the latest frame), never the local
-	 * arm. Its only local guard is the start press debounce, shared with Start Event. Sends
-	 * RequestState after an accepted start and after an unknown outcome.
+	 * arm. Its only local guard is the start press debounce for the armed target: the window is
+	 * shared with a Start Event left on the armed default, not with a Start Event for a chosen
+	 * event. Sends RequestState after an accepted start and after an unknown outcome.
 	 *
 	 * @param options - Action options; undefined values take their defaults
 	 * @param signal - Abort signal from the action callback; cancels the in-flight request and skips the cancelled-action warning
@@ -2445,46 +2449,49 @@ export const api = {
 	/**
 	 * Armed Duration +: lengthens the armed event's duration
 	 *
-	 * @param options - Action options
+	 * @param options - Action options; `duration` is passed on as received, so a missing value is refused by `changeDuration`
 	 * @param signal - Abort signal from the action callback; cancels the in-flight request and skips the cancelled-action warning
 	 * @returns Resolves when BreakTime answered or the request was not sent
 	 */
 	async increaseDuration(options?: CompanionOptionValues, signal?: AbortSignal): Promise<void> {
 		const self: BreakTimeInstance = this
-		await self.changeDuration('increaseDuration', 1, options?.duration ?? 5, signal)
+		await self.changeDuration('increaseDuration', 1, options?.duration, signal)
 	},
 
 	/**
 	 * Armed Duration -: shortens the armed event's duration
 	 *
-	 * @param options - Action options
+	 * @param options - Action options; `duration` is passed on as received, so a missing value is refused by `changeDuration`
 	 * @param signal - Abort signal from the action callback; cancels the in-flight request and skips the cancelled-action warning
 	 * @returns Resolves when BreakTime answered or the request was not sent
 	 */
 	async decreaseDuration(options?: CompanionOptionValues, signal?: AbortSignal): Promise<void> {
 		const self: BreakTimeInstance = this
-		await self.changeDuration('decreaseDuration', -1, options?.duration ?? 5, signal)
+		await self.changeDuration('decreaseDuration', -1, options?.duration, signal)
 	},
 
 	/**
 	 * Posts a signed duration delta for the armed event (`POST /api/playlist/events/{id}/duration`)
 	 *
 	 * Refused locally per `getDurationBlock()`, and for an amount that is not a whole number
-	 * from 1 to 65535. BreakTime clamps the result, so the module does no client-side
-	 * clamping of the request. The expected result is held as the pending duration
-	 * synchronously before the request. On a standby node the line carries `acting=false`
-	 * and the `ha` warning is raised.
+	 * from 1 to 65535. A missing amount (undefined or null, which is how a Seconds expression
+	 * that resolves to nothing arrives), a blank string and non-numeric text are refused the
+	 * same way; no default is substituted, because a default would change the duration by an
+	 * amount nobody set and report it as accepted. BreakTime clamps the result, so the module
+	 * does no client-side clamping of the request. The expected result is held as the pending
+	 * duration synchronously before the request. On a standby node the line carries
+	 * `acting=false` and the `ha` warning is raised.
 	 *
 	 * @param warningType - Warning type for refusals
 	 * @param sign - Direction
-	 * @param amount - Option value: whole seconds as a number (or text from a 2.0.x button)
+	 * @param amount - Option value: whole seconds as a number (or text from a 2.0.x button); undefined or null when the option has no value
 	 * @param signal - Abort signal from the action callback; cancels the in-flight request and skips the cancelled-action warning
 	 * @returns Resolves when BreakTime answered or the request was not sent
 	 */
 	async changeDuration(
 		warningType: 'increaseDuration' | 'decreaseDuration',
 		sign: 1 | -1,
-		amount: JsonValue,
+		amount: JsonValue | undefined,
 		signal?: AbortSignal,
 	): Promise<void> {
 		const self: BreakTimeInstance = this
@@ -2503,7 +2510,12 @@ export const api = {
 			return
 		}
 
-		const seconds = typeof amount === 'string' && amount.trim() === '' ? NaN : Number(amount)
+		// A missing or blank value is invalid, never a default. null is checked explicitly
+		// because Number(null) is 0.
+		const seconds =
+			amount === undefined || amount === null || (typeof amount === 'string' && amount.trim() === '')
+				? NaN
+				: Number(amount)
 
 		if (!Number.isInteger(seconds) || seconds < 1 || seconds > DURATION_STEP_MAX_S) {
 			self.reportNotSent(
@@ -2555,9 +2567,12 @@ export const api = {
 	 * Sends `delta = target - current`, where current is the pending duration of a press
 	 * still unconfirmed by a frame, otherwise the frame's `DurationSeconds`. The target is
 	 * held as pending synchronously before the request. Same local guards as Armed Duration
-	 * +/-, plus a target outside 6..6553 (Splice Insert) or 6..65535 (Time Signal). A delta
-	 * of 0 sends nothing and raises no warning. Logged as `action: duration` with `delta=`
-	 * and the target as `to=`.
+	 * +/-, plus a target outside 6..6553 (Splice Insert) or 6..65535 (Time Signal). A missing
+	 * `seconds` (undefined or null, which is how a Seconds expression that resolves to nothing
+	 * arrives) is refused like any other value that is not a whole number; no default is
+	 * substituted, because a default would set a duration nobody chose and report it as
+	 * accepted. A delta of 0 sends nothing and raises no warning. Logged as `action: duration`
+	 * with `delta=` and the target as `to=`.
 	 *
 	 * @param options - Action options
 	 * @param signal - Abort signal from the action callback; cancels the in-flight request and skips the cancelled-action warning
@@ -2566,8 +2581,13 @@ export const api = {
 	async setArmedDuration(options?: CompanionOptionValues, signal?: AbortSignal): Promise<void> {
 		const self: BreakTimeInstance = this
 
-		const amount = options?.seconds ?? 60
-		const seconds = typeof amount === 'string' && amount.trim() === '' ? NaN : Number(amount)
+		// A missing or blank value is invalid, never a default. null is checked explicitly
+		// because Number(null) is 0.
+		const amount = options?.seconds
+		const seconds =
+			amount === undefined || amount === null || (typeof amount === 'string' && amount.trim() === '')
+				? NaN
+				: Number(amount)
 		const valid = Number.isInteger(seconds)
 		const armed = self.DATA.selectedEvent
 		const base = armed ? (self.getPendingDuration(armed.ID) ?? armed.DurationSeconds ?? NaN) : NaN

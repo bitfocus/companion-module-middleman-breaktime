@@ -10,7 +10,9 @@
  * set (it is `@deprecated` in base 2.2.2), so base lays the fields out itself and the hand-built
  * 12-column grid is gone. Every config field sets `width` because base 2.2.2's
  * `CompanionConfigField` requires it (the module template sets it the same way, e.g. host 8 /
- * port 4); the automatic layout positions the fields itself and does not use these values. The two
+ * port 4). The automatic layout positions the fields itself and ignores `width`, with one
+ * exception in Companion 5.1.1: a long `static-text` (over 100 characters, or multi-line) is shown
+ * full width only while its `width` is unset or above 6, so `info` keeps `width: 12`. The two
  * checkboxes referenced by an `isVisibleExpression` (`showAdvanced` and `verbose`) carry
  * `disableAutoExpression: true`, which base 2.x requires for any field an `isVisibleExpression`
  * reads.
@@ -33,9 +35,10 @@ export const configFields = {
 	 * which stops at 65534; main.ts checks the stored values with the same patterns.
 	 *
 	 * Fields render in base 2.x's automatic layout (each field sets the `width` base 2.2.2 requires;
-	 * the layout positions the fields itself and does not use it), in definition order: Information;
-	 * a divider; Host; Port; a second divider; Show Advanced Settings. With it on: API Key; Running
-	 * Event Slots; Verbose Logging; and Log Raw BreakTime Data.
+	 * the layout positions the fields itself and reads `width` only for a long `static-text`, which is
+	 * why `info` keeps 12), in definition order: Information; a divider; Host; Port; a second divider;
+	 * Show Advanced Settings. With it on: API Key; Running Event Slots; Verbose Logging; and Log Raw
+	 * BreakTime Data.
 	 *
 	 * `showAdvanced` only drives the `isVisibleExpression` of the fields after it: the module
 	 * never reads it, and main.ts leaves it out of the settings it compares, so saving it

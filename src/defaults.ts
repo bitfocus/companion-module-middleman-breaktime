@@ -336,9 +336,11 @@ export const DURATION_STEP_MAX_S = 65535
 export const PENDING_DURATION_MS = 2000
 
 /**
- * How long after a Start (or End) press that sent a request a further Start (or End) press is ignored, in ms
+ * How long after a Start (or End) press that sent a request a further press of the same target is ignored, in ms
  *
- * Start and End each have their own window; arm and duration actions are not debounced.
+ * Each press target has its own window (Start of the armed event, Start of each chosen event,
+ * End latest, End all, End of each specific event; see `pressSentAt` in main.ts), so a press of a
+ * different target is not ignored. Arm and duration actions are not debounced.
  */
 export const PRESS_DEBOUNCE_MS = 500
 

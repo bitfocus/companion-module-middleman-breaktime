@@ -134,7 +134,8 @@ export type Secrets = JsonObject & {
  * a preset is a compile error instead of a runtime surprise. Dropdown values are the stored
  * `string | number`; `endSelected.event` is optional because it is only meaningful when Target is a
  * specific event (the latest/all presets omit it). The handlers' `?? default` fallbacks still cover an
- * option missing from a button saved before it existed.
+ * option missing from a button saved before it existed, except the Seconds options (`duration`,
+ * `seconds`): a missing value there is refused, never defaulted.
  */
 export type ActionsSchema = {
 	startSelected: CompanionActionSchemaWithoutResult<{
